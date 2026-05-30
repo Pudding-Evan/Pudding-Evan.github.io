@@ -9,7 +9,9 @@ if errorlevel 1 (
 )
 
 echo Starting local preview...
-echo Open http://127.0.0.1:8000 in your browser.
+echo A browser window should open automatically.
+echo If it does not, copy the Preview URL printed below.
+echo The default preview port is 8010.
 python scripts\serve.py
 
 :end

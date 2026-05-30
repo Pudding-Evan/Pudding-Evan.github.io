@@ -24,7 +24,7 @@
   --shadow: 5px 5px 0 rgba(132, 98, 68, 0.13);
   --shell: 1360px;
   --content: 1040px;
-  --side-decor: clamp(150px, 11vw, 230px);
+  --side-decor: clamp(300px, 17vw, 380px);
 }
 
 * {
@@ -61,177 +61,75 @@ body {
   bottom: 38px;
   z-index: 0;
   width: var(--side-decor);
-  min-height: 560px;
-  opacity: 0.72;
+  content: "";
+  background-image:
+    url("assets/decor/items/door.png"),
+    url("assets/decor/items/rocks.png"),
+    url("assets/decor/items/web.png"),
+    url("assets/decor/items/key.png"),
+    url("assets/decor/items/chest.png"),
+    url("assets/decor/items/torch.png"),
+    url("assets/decor/items/map.png"),
+    url("assets/decor/items/sword.png"),
+    url("assets/decor/items/potion.png"),
+    url("assets/decor/items/stairs.png"),
+    url("assets/decor/items/mushrooms.png"),
+    url("assets/decor/items/rope.png"),
+    url("assets/decor/items/compass.png"),
+    url("assets/decor/items/sparkles.png"),
+    url("assets/decor/items/blocks.png"),
+    url("assets/decor/items/moss.png"),
+    url("assets/decor/dungeon-trail.svg");
+  background-position:
+    22px 34px,
+    228px 204px,
+    206px 348px,
+    58px 500px,
+    165px 650px,
+    245px 820px,
+    42px 1010px,
+    215px 1240px,
+    80px 1485px,
+    205px 1715px,
+    44px 1995px,
+    190px 2255px,
+    74px 2490px,
+    258px 1110px,
+    36px 1820px,
+    235px 2140px,
+    0 0;
+  background-repeat: no-repeat;
+  background-size:
+    170px auto,
+    72px auto,
+    76px auto,
+    86px auto,
+    146px auto,
+    72px auto,
+    150px auto,
+    130px auto,
+    86px auto,
+    150px auto,
+    128px auto,
+    140px auto,
+    108px auto,
+    70px auto,
+    84px auto,
+    110px auto,
+    100% auto;
+  filter: sepia(7%) saturate(0.92) contrast(1.08);
+  mix-blend-mode: multiply;
+  opacity: 0.56;
   pointer-events: none;
 }
 
-.side-quest-left {
-  left: max(14px, calc((100vw - var(--shell)) / 2 - var(--side-decor) + 48px));
+body::before {
+  left: max(30px, calc((100vw - var(--shell)) / 2 - var(--side-decor) + 6px));
 }
 
-.side-quest-right {
-  right: max(14px, calc((100vw - var(--shell)) / 2 - var(--side-decor) + 48px));
-}
-
-.decor-item,
-.decor-link {
-  position: absolute;
-  transform: translate(-50%, -50%);
-}
-
-.decor-link {
-  left: var(--x);
-  top: var(--y);
-  width: 0;
-  height: var(--h);
-  border-left: 2px dashed rgba(188, 152, 120, 0.42);
-  transform: translate(-50%, -50%) rotate(var(--r));
-}
-
-.decor-link::after {
-  position: absolute;
-  top: calc(50% - 3px);
-  left: -4px;
-  width: 6px;
-  height: 6px;
-  content: "";
-  background: rgba(119, 143, 106, 0.35);
-  box-shadow: 0 0 0 2px rgba(255, 250, 241, 0.38);
-}
-
-.decor-item {
-  left: var(--x);
-  top: var(--y);
-  display: block;
-  filter: drop-shadow(4px 5px 0 rgba(132, 98, 68, 0.12));
-}
-
-.decor-chest {
-  width: 54px;
-  height: 42px;
-  border: 3px solid #765542;
-  border-radius: 6px 6px 4px 4px;
-  background:
-    linear-gradient(90deg, transparent calc(50% - 3px), #765542 calc(50% - 3px) calc(50% + 3px), transparent calc(50% + 3px)),
-    linear-gradient(#e1ad56 0 45%, #b96a4d 45% 100%);
-}
-
-.decor-chest::before,
-.decor-chest::after {
-  position: absolute;
-  content: "";
-}
-
-.decor-chest::before {
-  top: 15px;
-  right: -3px;
-  left: -3px;
-  height: 4px;
-  background: #765542;
-}
-
-.decor-chest::after {
-  top: 18px;
-  left: calc(50% - 7px);
-  width: 14px;
-  height: 11px;
-  border: 2px solid #765542;
-  background: #f3d17c;
-}
-
-.decor-key {
-  width: 58px;
-  height: 26px;
-  transform: translate(-50%, -50%) rotate(-18deg);
-}
-
-.decor-key::before,
-.decor-key::after {
-  position: absolute;
-  content: "";
-}
-
-.decor-key::before {
-  top: 2px;
-  left: 0;
-  width: 19px;
-  height: 19px;
-  border: 5px solid #b88d4b;
-  border-radius: 50%;
-  background: rgba(255, 250, 241, 0.48);
-}
-
-.decor-key::after {
-  top: 11px;
-  left: 21px;
-  width: 35px;
-  height: 6px;
-  background: #b88d4b;
-  box-shadow:
-    22px 6px 0 -1px #b88d4b,
-    29px 6px 0 -1px #b88d4b;
-}
-
-.decor-potion {
-  width: 34px;
-  height: 48px;
-  border: 3px solid #6c5962;
-  border-radius: 9px 9px 15px 15px;
-  background: linear-gradient(180deg, #fffaf1 0 25%, #8fc0ad 25% 50%, #778f6a 50% 100%);
-  transform: translate(-50%, -50%) rotate(9deg);
-}
-
-.decor-potion::before {
-  position: absolute;
-  top: -13px;
-  left: 8px;
-  width: 12px;
-  height: 12px;
-  border: 3px solid #6c5962;
-  content: "";
-  background: #eadfce;
-}
-
-.decor-coin {
-  width: 30px;
-  height: 30px;
-  border: 3px solid #9f7235;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe39a 0 18%, #cfa35a 19% 100%);
-}
-
-.decor-coin::after {
-  position: absolute;
-  top: 6px;
-  left: 12px;
-  width: 4px;
-  height: 13px;
-  content: "";
-  background: rgba(118, 85, 66, 0.42);
-}
-
-.decor-stone {
-  width: 36px;
-  height: 23px;
-  border: 2px solid rgba(108, 89, 75, 0.42);
-  border-radius: 45% 55% 48% 52%;
-  background: #cdbda9;
-  transform: translate(-50%, -50%) rotate(-7deg);
-}
-
-.decor-stone.small {
-  width: 20px;
-  height: 14px;
-  opacity: 0.72;
-}
-
-.decor-spark {
-  width: 18px;
-  height: 18px;
-  background: #c87552;
-  clip-path: polygon(50% 0, 62% 37%, 100% 50%, 62% 63%, 50% 100%, 38% 63%, 0 50%, 38% 37%);
-  opacity: 0.7;
+body::after {
+  right: max(30px, calc((100vw - var(--shell)) / 2 - var(--side-decor) + 6px));
+  transform: scaleX(-1);
 }
 
 main {

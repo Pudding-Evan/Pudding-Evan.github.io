@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="2680" viewBox="0 0 380 2680">
+  <path
+    d="M156 250
+       C242 330 250 430 145 535
+       C72 608 130 682 236 735
+       C322 778 320 892 270 980
+       C204 1095 72 1125 88 1238
+       C104 1356 288 1378 276 1508
+       C264 1628 112 1654 128 1770
+       C146 1896 304 1915 292 2044
+       C280 2155 96 2164 98 2280
+       C100 2400 270 2418 246 2528
+       C230 2598 164 2602 136 2646"
+    fill="none"
+    stroke="#b89470"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-dasharray="18 22"
+    opacity=".48"/>
+  <g fill="#8a9b74" opacity=".34">
+    <rect x="220" y="718" width="13" height="13" transform="rotate(18 226.5 724.5)"/>
+    <rect x="86" y="1214" width="12" height="12" transform="rotate(-14 92 1220)"/>
+    <rect x="274" y="1904" width="13" height="13" transform="rotate(23 280.5 1910.5)"/>
+  </g>
+</svg>
