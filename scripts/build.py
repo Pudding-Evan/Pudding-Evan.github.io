@@ -30,7 +30,7 @@ HOME_VIDEOS_START = "<!-- AUTO_VIDEOS_START -->"
 HOME_VIDEOS_END = "<!-- AUTO_VIDEOS_END -->"
 ARCHIVE_START = "<!-- AUTO_POSTS_START -->"
 ARCHIVE_END = "<!-- AUTO_POSTS_END -->"
-STYLE_VERSION = "18"
+STYLE_VERSION = "20"
 
 
 @dataclass
@@ -511,8 +511,7 @@ def archive_rows(posts: list[Post]) -> str:
         rows.append(
             f'        <a class="note-row" href="posts/{post.slug}.html">'
             f'<time class="archive-date" datetime="{post.published}">{post.display_date}</time>'
-            f"<div><h2>{html.escape(post.title)}</h2><p>{html.escape(post.summary)}</p></div>"
-            f'<span class="tag">{html.escape(post.tag)}</span></a>'
+            f"<div><h2>{html.escape(post.title)}</h2><p>{html.escape(post.summary)}</p></div></a>"
         )
     return "\n".join(rows)
 
