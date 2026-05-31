@@ -31,7 +31,7 @@ HOME_VIDEOS_START = "<!-- AUTO_VIDEOS_START -->"
 HOME_VIDEOS_END = "<!-- AUTO_VIDEOS_END -->"
 ARCHIVE_START = "<!-- AUTO_POSTS_START -->"
 ARCHIVE_END = "<!-- AUTO_POSTS_END -->"
-STYLE_VERSION = "28"
+STYLE_VERSION = "29"
 HOME_POST_TAG = "GAS"
 
 
@@ -598,10 +598,11 @@ def footer(prefix: str) -> str:
 
 def article_page(post: Post) -> str:
     lead = f'\n      <p class="article-lead">{html.escape(post.lead)}</p>' if post.lead else ""
+    tag_value = html.escape(tag_filter_value(post.tag))
     return f"""{header("../", post.summary, post.title)}
     <main class="article site-shell">
       <a class="text-link article-back" href="../articles.html">BACK TO ARTICLES</a>
-      <div class="meta"><span>{html.escape(post.tag)}</span><span>{post.display_date}</span><span>{post.read_minutes} MIN READ</span></div>
+      <div class="meta"><a class="meta-tag" href="../articles.html?tag={tag_value}">{html.escape(post.tag)}</a><span>{post.display_date}</span><span>{post.read_minutes} MIN READ</span></div>
       <h1>{html.escape(post.title)}</h1>{lead}
       {post.body}
     </main>
@@ -707,6 +708,14 @@ def videos_page(videos: list[Video]) -> str:
 """
 
 
+def update_static_asset_versions(*pages: Path) -> None:
+    for page in pages:
+        if not page.exists():
+            continue
+        text = page.read_text(encoding="utf-8")
+        text = re.sub(r'((?:styles|site)\.(?:css|js)\?v=)\d+', rf'\g<1>{STYLE_VERSION}', text)
+        page.write_text(text, encoding="utf-8")
+
 def write_posts(posts: list[Post]) -> None:
     POSTS_DIR.mkdir(parents=True, exist_ok=True)
     old_generated: set[str] = set()
@@ -751,6 +760,7 @@ def main() -> None:
         home_video_rows(videos),
     )
     replace_generated_area(ROOT / "articles.html", ARCHIVE_START, ARCHIVE_END, archive_rows(posts))
+    update_static_asset_versions(ROOT / "index.html", ROOT / "articles.html", ROOT / "404.html")
     image_cache.save()
     print(f"Built {len(posts)} article(s) and {len(videos)} video(s).")
 

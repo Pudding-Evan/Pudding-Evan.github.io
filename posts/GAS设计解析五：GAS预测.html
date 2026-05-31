@@ -2,14 +2,14 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Gas预测"><title>Gas设计解析五：预测 | 楽園（Elysium）</title><link rel="stylesheet" href="../styles.css?v=28">
-    <script src="../site.js?v=28" defer></script>
+    <meta name="description" content="Gas预测"><title>Gas设计解析五：预测 | 楽園（Elysium）</title><link rel="stylesheet" href="../styles.css?v=29">
+    <script src="../site.js?v=29" defer></script>
   </head>
   <body>
     <header class="site-header"><nav class="nav site-shell" aria-label="主导航"><a class="brand" href="../index.html"><span class="brand-mark">E</span>楽園 <span class="brand-sub">// ELYSIUM</span></a><div class="nav-links"><a href="../articles.html" aria-current="page">NOTE</a><a href="../videos.html">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></nav></header>
     <main class="article site-shell">
       <a class="text-link article-back" href="../articles.html">BACK TO ARTICLES</a>
-      <div class="meta"><span>GAS</span><span>2026.05.31</span><span>11 MIN READ</span></div>
+      <div class="meta"><a class="meta-tag" href="../articles.html?tag=gas">GAS</a><span>2026.05.31</span><span>11 MIN READ</span></div>
       <h1>Gas设计解析五：预测</h1>
       <p>前面几篇把 ASC、Attribute、GE、Ability 和 Tag 的关系基本铺开了。预测这一篇要回答的是另一类问题：在多人游戏里，客户端按下技能以后，为什么不用等服务端往返确认就能立刻看到反馈；如果服务端最后拒绝了这次操作，客户端又如何把刚才提前做过的事情撤掉。</p>
       <p>GAS 的预测可以理解为：</p>
