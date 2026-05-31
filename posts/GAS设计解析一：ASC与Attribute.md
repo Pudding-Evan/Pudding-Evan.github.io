@@ -42,7 +42,7 @@ AbilitySystemComponent->InitAbilityActorInfo(InOwnerActor, InAvatarActor);
 
 例如 `UAbilityTask_ApplyRootMotionConstantForce` 会从 ActorInfo 里拿到 `MovementComponent`，然后执行 RootMotionSource 相关逻辑。
 
-![FGameplayAbilityActorInfo 缓存信息](image/01_ASC与Attribute/01_01.png)
+![FGameplayAbilityActorInfo 缓存信息](Image/01_ASC与Attribute/01_01.png)
 
 ## 属性及自动注册
 
@@ -185,7 +185,7 @@ Setter 更像是代码层面的直接赋值，适合初始化或少量明确场�
 
 AttributeSet 提供了一组重要钩子，项目中经常会重写它们：
 
-![Attribute 修改相关钩子](image/01_ASC与Attribute/01_02.png)
+![Attribute 修改相关钩子](Image/01_ASC与Attribute/01_02.png)
 
 `PreAttributeChange` 在 CurrentValue 变化前调用，适合做限制操作，例如 Clamp。它接收的是引用参数，可以直接修正即将写入的值。
 

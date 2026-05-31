@@ -2,13 +2,13 @@
 
 上一篇章提到 GE 对属性进行修改的两大方式：Modifier 与 Execution。其中 Modifier 又有四种 Magnitude 计算方式。这一偏结合实际项目案例，分别说明它们是如何运作的。
 
-![GE 属性修改方式概览](image/03_GE属性修改案例/03_01.png)
+![GE 属性修改方式概览](Image/03_GE属性修改案例/03_01.png)
 
 # Modifier
 
 Modifier 这种方式一次只能对一个 Attribute 进行修改，并且需要给定一个修改方式，也就是 ModifierOp。
 
-![Modifier 配置示例](image/03_GE属性修改案例/03_02.png)
+![Modifier 配置示例](Image/03_GE属性修改案例/03_02.png)
 
 GE 中保存 Modifier 的成员大致如下：
 
@@ -51,7 +51,7 @@ UPROPERTY(EditDefaultsOnly, Category = Magnitude)
 FSetByCallerFloat SetByCallerMagnitude;
 ```
 
-![ModifierMagnitude 结构](image/03_GE属性修改案例/03_03.png)
+![ModifierMagnitude 结构](Image/03_GE属性修改案例/03_03.png)
 
 实际上，这些方法都是为了拿到一个 float。
 
@@ -100,7 +100,7 @@ FActiveGameplayEffectsContainer::ExecuteActiveEffectsFrom
 
 如图，这个配置代表：当 GE 应用时，对属性 `Health` 加上 20。
 
-![ScalableFloat 修改 Health](image/03_GE属性修改案例/03_04.png)
+![ScalableFloat 修改 Health](Image/03_GE属性修改案例/03_04.png)
 
 假设配置如下：
 

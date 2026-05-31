@@ -96,92 +96,92 @@
       "output": "assets/post-images/75987cb72025f4016ffb4891.png"
     },
     "local:posts/Image/01_ASC与Attribute/01_01.png": {
-      "source": "image/01_ASC与Attribute/01_01.png",
+      "source": "Image/01_ASC与Attribute/01_01.png",
       "sha256": "f653b6dcf6251160a5b8808fa473aeb6471b23c48e18a24cab38470efb9e39b2",
       "output": "assets/post-images/f653b6dcf6251160a5b8808f.png"
     },
     "local:posts/Image/01_ASC与Attribute/01_02.png": {
-      "source": "image/01_ASC与Attribute/01_02.png",
+      "source": "Image/01_ASC与Attribute/01_02.png",
       "sha256": "b08df7f6d6ef1da9d2fbb03b65bae07920721e6f72841c620234704ec850b864",
       "output": "assets/post-images/b08df7f6d6ef1da9d2fbb03b.png"
     },
     "local:posts/Image/03_GE属性修改案例/03_01.png": {
-      "source": "image/03_GE属性修改案例/03_01.png",
+      "source": "Image/03_GE属性修改案例/03_01.png",
       "sha256": "a20693e2d3b97257c8f7da88ec82ecb5ff75732bba5fd97bfa462018c7677009",
       "output": "assets/post-images/a20693e2d3b97257c8f7da88.png"
     },
     "local:posts/Image/03_GE属性修改案例/03_02.png": {
-      "source": "image/03_GE属性修改案例/03_02.png",
+      "source": "Image/03_GE属性修改案例/03_02.png",
       "sha256": "718a2ed756a704522c8153fbfff251ff03f20086b217ef0567e0b8208ebc5ced",
       "output": "assets/post-images/718a2ed756a704522c8153fb.png"
     },
     "local:posts/Image/03_GE属性修改案例/03_03.png": {
-      "source": "image/03_GE属性修改案例/03_03.png",
+      "source": "Image/03_GE属性修改案例/03_03.png",
       "sha256": "90574c6a4b406edfdde9dc3fe1a8ae54a28bce98759b1c8c970766ac378090b1",
       "output": "assets/post-images/90574c6a4b406edfdde9dc3f.png"
     },
     "local:posts/Image/03_GE属性修改案例/03_04.png": {
-      "source": "image/03_GE属性修改案例/03_04.png",
+      "source": "Image/03_GE属性修改案例/03_04.png",
       "sha256": "ac3da7813f0424c0abb3654d5e6dd35ade8dfb605c877eb1b64294f4fd124609",
       "output": "assets/post-images/ac3da7813f0424c0abb3654d.png"
     },
     "local:posts/Image/02_GameplayEffect/02_01.png": {
-      "source": "image/02_GameplayEffect/02_01.png",
+      "source": "Image/02_GameplayEffect/02_01.png",
       "sha256": "ecb5bb7698ba049bbf64b16bae6171e0cb82139dcd30ab8b83adca3d7bf65001",
       "output": "assets/post-images/ecb5bb7698ba049bbf64b16b.png"
     },
     "local:posts/Image/02_GameplayEffect/02_02.png": {
-      "source": "image/02_GameplayEffect/02_02.png",
+      "source": "Image/02_GameplayEffect/02_02.png",
       "sha256": "ece5347a92bd1f832cb46735567ff29fd83554d7f6184eca14fb362f2a9b91ee",
       "output": "assets/post-images/ece5347a92bd1f832cb46735.png"
     },
     "local:posts/Image/02_GameplayEffect/02_03.png": {
-      "source": "image/02_GameplayEffect/02_03.png",
+      "source": "Image/02_GameplayEffect/02_03.png",
       "sha256": "b522d0546e95c56476c939fffca57623c98ddaa048d1b0c20b9ffc752e12f8f6",
       "output": "assets/post-images/b522d0546e95c56476c939ff.png"
     },
     "local:posts/Image/02_GameplayEffect/02_04.png": {
-      "source": "image/02_GameplayEffect/02_04.png",
+      "source": "Image/02_GameplayEffect/02_04.png",
       "sha256": "f56acc09279700943de111706061dfe99bcf6e4f7209f0e626235b2d70675b29",
       "output": "assets/post-images/f56acc09279700943de11170.png"
     },
     "local:posts/Image/02_GameplayEffect/02_05.png": {
-      "source": "image/02_GameplayEffect/02_05.png",
+      "source": "Image/02_GameplayEffect/02_05.png",
       "sha256": "9c0f7efac3536ff788997b5a4bbde58a6db169d33126c102bb67e496134e60ef",
       "output": "assets/post-images/9c0f7efac3536ff788997b5a.png"
     },
     "local:posts/Image/02_GameplayEffect/02_06.png": {
-      "source": "image/02_GameplayEffect/02_06.png",
+      "source": "Image/02_GameplayEffect/02_06.png",
       "sha256": "7c3b28bbd109843fce24e442085c6e8deddd4f806ef7dafafd756ce3e60de84d",
       "output": "assets/post-images/7c3b28bbd109843fce24e442.png"
     },
     "local:posts/Image/02_GameplayEffect/02_07.png": {
-      "source": "image/02_GameplayEffect/02_07.png",
+      "source": "Image/02_GameplayEffect/02_07.png",
       "sha256": "3d0d3e72de8864b86a0c06ce6ce418dfe0c3535a33fbf18d3142ff08e936fb7c",
       "output": "assets/post-images/3d0d3e72de8864b86a0c06ce.png"
     },
     "local:posts/Image/02_GameplayEffect/02_08.png": {
-      "source": "image/02_GameplayEffect/02_08.png",
+      "source": "Image/02_GameplayEffect/02_08.png",
       "sha256": "4f98d32474bd5478a0463a166113e917df0e806b2b90f5f7567dda295c8650fc",
       "output": "assets/post-images/4f98d32474bd5478a0463a16.png"
     },
     "local:posts/Image/02_GameplayEffect/02_09.png": {
-      "source": "image/02_GameplayEffect/02_09.png",
+      "source": "Image/02_GameplayEffect/02_09.png",
       "sha256": "ba8f87200b07ab695c0c8b8de256e63fde34e76e0b8e3cf78f3b35f36a011d39",
       "output": "assets/post-images/ba8f87200b07ab695c0c8b8d.png"
     },
     "local:posts/Image/02_GameplayEffect/02_10.png": {
-      "source": "image/02_GameplayEffect/02_10.png",
+      "source": "Image/02_GameplayEffect/02_10.png",
       "sha256": "c69db6455b764fd32c3fe14efb35787bcb948d2847d8e92b048622cab3e43383",
       "output": "assets/post-images/c69db6455b764fd32c3fe14e.png"
     },
     "local:posts/Image/02_GameplayEffect/02_11.png": {
-      "source": "image/02_GameplayEffect/02_11.png",
+      "source": "Image/02_GameplayEffect/02_11.png",
       "sha256": "f58d9a293e2580bafa261acbdcc663350a67e7409e504a495c7fe7bbb17c0503",
       "output": "assets/post-images/f58d9a293e2580bafa261acb.png"
     },
     "local:posts/Image/02_GameplayEffect/02_12.png": {
-      "source": "image/02_GameplayEffect/02_12.png",
+      "source": "Image/02_GameplayEffect/02_12.png",
       "sha256": "39ae37597b480ed1b01d282c58f714e63ea0cef8491254ec3ea93cc56eeb92f8",
       "output": "assets/post-images/39ae37597b480ed1b01d282c.png"
     }

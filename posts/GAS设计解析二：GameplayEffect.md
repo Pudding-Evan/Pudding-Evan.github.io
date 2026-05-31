@@ -12,7 +12,7 @@ GE 有三种持续类型：
 
 它只是一个定义单一游戏效果的数据类，或者叫 Buff 配置。不应该承载太多额外流程逻辑。流程逻辑应当在 GameplayAbility、AbilityTask、ExecutionCalculation 或项目自己的系统里完成。GE 的职责是把“这次效果如何影响 ASC”描述清楚。
 
-![GameplayEffect 基础配置](image/02_GameplayEffect/02_01.png)
+![GameplayEffect 基础配置](Image/02_GameplayEffect/02_01.png)
 
 对于可以设定周期应用的 Duration 和 Infinite GE，每经过一段时间会执行一次 Effect。源码里这类 Periodic GameplayEffect 每次周期触发都会被当作 Instant 执行。值得注意的是，周期性 GE 不能被客户端预测。
 
@@ -20,7 +20,7 @@ GE 有三种持续类型：
 
 GameplayEffect 本身不是按使用次数实例化的对象。应用一个 GE 时，系统会从 `UGameplayEffect` 的 CDO 创建一个 `FGameplayEffectSpec`。Spec 再被应用到目标 ASC，并由 `FActiveGameplayEffectsContainer` 追踪。
 
-![GameplayEffectSpec 创建与应用](image/02_GameplayEffect/02_02.png)
+![GameplayEffectSpec 创建与应用](Image/02_GameplayEffect/02_02.png)
 
 `FGameplayEffectSpec` 可以理解为“这次具体应用”的运行时数据。它保存：
 
@@ -36,7 +36,7 @@ GameplayEffect 本身不是按使用次数实例化的对象。应用一个 GE �
 
 实际保存在 ASC 中的也不是 `FGameplayEffectSpec`，而是 `FActiveGameplayEffect`。它会再包一层，附加开始时间、持续时间、周期执行时间、Stack 层数、预测 Key 等运行状态。
 
-![FActiveGameplayEffect 包装 Spec](image/02_GameplayEffect/02_03.png)
+![FActiveGameplayEffect 包装 Spec](Image/02_GameplayEffect/02_03.png)
 
 两个核心入口：
 
@@ -65,7 +65,7 @@ GE 的堆叠方式主要有两种：
 - `BySource`：按来源 ASC 分开计算层数。每个来源都有自己的层数限制。
 - `ByTarget`：不关心来源，只看目标 ASC 上这个效果是否已经达到层数上限。
 
-![GameplayEffect Stack 配置](image/02_GameplayEffect/02_04.png)
+![GameplayEffect Stack 配置](Image/02_GameplayEffect/02_04.png)
 
 堆叠时还会涉及：
 
@@ -87,7 +87,7 @@ GameplayEffect 大量使用 GameplayTag。常见用途包括：
 - Removal Requirement：决定是否移除已有 GE。
 - Immunity：决定是否免疫某类 GE。
 
-![GameplayEffect Tag 配置](image/02_GameplayEffect/02_05.png)
+![GameplayEffect Tag 配置](Image/02_GameplayEffect/02_05.png)
 
 通过这些 Tag，就可以完成效果互斥、状态门控和免疫判断。
 
@@ -113,7 +113,7 @@ Modifier 支持预测。ExecutionCalculation 不支持预测。
 
 Modifier 是 GE 成员变量中的一组配置：
 
-![GameplayEffectModifier 配置](image/02_GameplayEffect/02_06.png)
+![GameplayEffectModifier 配置](Image/02_GameplayEffect/02_06.png)
 
 一个 Modifier 修改一个 Attribute。它由三部分组成：
 
@@ -123,7 +123,7 @@ Modifier 是 GE 成员变量中的一组配置：
 
 一个 GE 可以有多个 Modifier，所以一次 GE 应用可以同时修改多个 Attribute。但每个 Modifier 自身仍然只负责一个 Attribute。
 
-![Modifier Magnitude 类型](image/02_GameplayEffect/02_07.png)
+![Modifier Magnitude 类型](Image/02_GameplayEffect/02_07.png)
 
 Magnitude 主要有四种计算方式：
 
@@ -154,7 +154,7 @@ GE 还可以授予 Ability。
 
 一种常见做法是：应用一个 GE，GE 在激活期间授予一个自动激活或可激活的 Ability。这个能力会在 GE 存在时有效，GE 被移除后能力也随之撤销。
 
-![GameplayEffect 授予 Ability 配置](image/02_GameplayEffect/02_08.png)
+![GameplayEffect 授予 Ability 配置](Image/02_GameplayEffect/02_08.png)
 
 入口仍然在 `ApplyGameplayEffectSpec` 一侧。大致调用栈可以观察到：
 
@@ -165,7 +165,7 @@ FActiveGameplayEffectsContainer::ApplyGameplayEffectSpec
       FActiveGameplayEffectsContainer::AddActiveGameplayEffectGrantedTagsAndModifiers
 ```
 
-![GameplayEffect 授予 Ability 调用栈](image/02_GameplayEffect/02_09.png)
+![GameplayEffect 授予 Ability 调用栈](Image/02_GameplayEffect/02_09.png)
 
 这个机制适合做装备技能、状态技能、临时被动等内容。
 
@@ -175,7 +175,7 @@ FActiveGameplayEffectsContainer::ApplyGameplayEffectSpec
 
 上文提到，GE 可以通过 Tag Requirement 做互斥和阻挡。但 GE 仍然提供了单独的 Immunity 配置。
 
-![GameplayEffect Immunity 配置](image/02_GameplayEffect/02_10.png)
+![GameplayEffect Immunity 配置](Image/02_GameplayEffect/02_10.png)
 
 单独提供 Immunity 的一个原因是它能触发更明确的阻挡回调，例如：
 
@@ -185,11 +185,11 @@ UAbilitySystemComponent::OnImmunityBlockGameplayEffectDelegate
 
 这样项目可以在“效果被免疫”时做专门表现，例如播放格挡反馈、记录战斗日志。
 
-![免疫规则示例](image/02_GameplayEffect/02_11.png)
+![免疫规则示例](Image/02_GameplayEffect/02_11.png)
 
 无论是 Tag Requirement 还是 Immunity，最终都是在 GE 应用流程中检查。源码入口仍然能在 `ApplyGameplayEffectSpecToSelf` 附近看到。
 
-![ApplyGameplayEffectSpecToSelf 中的免疫检测](image/02_GameplayEffect/02_12.png)
+![ApplyGameplayEffectSpecToSelf 中的免疫检测](Image/02_GameplayEffect/02_12.png)
 
 所以可以这样理解：Tag Requirement 更像“通用门禁”，Immunity 更像“带通知能力的专用门禁”。
 
