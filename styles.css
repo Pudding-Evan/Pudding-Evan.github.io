@@ -656,9 +656,10 @@ h1 {
 .note-row h2 {
   margin-bottom: 8px;
   color: #4b3a32;
-  font-family: var(--pixel);
+  font-family: var(--body);
   font-size: clamp(20px, 2.4vw, 28px);
-  letter-spacing: -0.055em;
+  font-weight: 700;
+  letter-spacing: normal;
 }
 
 .note-row p {
@@ -797,6 +798,17 @@ h1 {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.meta-tag {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.meta-tag:hover,
+.meta-tag:focus-visible {
+  color: var(--green);
 }
 
 .card h3 {
