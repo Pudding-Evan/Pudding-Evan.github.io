@@ -65,27 +65,43 @@ function buildSideDecor() {
 
 buildSideDecor();
 
+function normalizeArticleTag(tag) {
+  return (tag || "all").trim().toLowerCase();
+}
+
+function articleRowTags(row) {
+  return (row.dataset.tags || row.dataset.tag || "")
+    .split(/[\s,，|/]+/)
+    .map(normalizeArticleTag)
+    .filter(Boolean);
+}
+
 function setupArticleTagFilter() {
   const browser = document.querySelector("[data-article-browser]");
   if (!browser) return;
 
   const controls = Array.from(browser.querySelectorAll("[data-tag-filter]"));
-  const rows = Array.from(browser.querySelectorAll("[data-tag]"));
+  const rows = Array.from(browser.querySelectorAll("[data-tag], [data-tags]"));
   const empty = browser.querySelector("[data-archive-empty]");
   if (!controls.length || !rows.length) return;
 
-  const availableTags = new Set(controls.map((control) => control.dataset.tagFilter));
+  const availableTags = new Set(
+    controls.map((control) => normalizeArticleTag(control.dataset.tagFilter)),
+  );
 
   function applyFilter(nextTag, updateUrl) {
-    const activeTag = availableTags.has(nextTag) ? nextTag : "all";
+    const requestedTag = normalizeArticleTag(nextTag);
+    const activeTag = availableTags.has(requestedTag) ? requestedTag : "all";
     let visibleCount = 0;
 
     controls.forEach((control) => {
-      control.setAttribute("aria-pressed", String(control.dataset.tagFilter === activeTag));
+      const isActive = normalizeArticleTag(control.dataset.tagFilter) === activeTag;
+      control.setAttribute("aria-pressed", String(isActive));
+      control.classList.toggle("is-active", isActive);
     });
 
     rows.forEach((row) => {
-      const visible = activeTag === "all" || row.dataset.tag === activeTag;
+      const visible = activeTag === "all" || articleRowTags(row).includes(activeTag);
       row.hidden = !visible;
       if (visible) visibleCount += 1;
     });
@@ -102,21 +118,23 @@ function setupArticleTagFilter() {
         url.searchParams.set("tag", activeTag);
       }
       window.history.pushState({ tag: activeTag }, "", url);
+    } else {
+      window.history.replaceState({ tag: activeTag }, "", window.location.href);
     }
   }
 
-  controls.forEach((control) => {
-    control.addEventListener("click", (event) => {
-      event.preventDefault();
-      applyFilter(control.dataset.tagFilter || "all", true);
-    });
+  browser.addEventListener("click", (event) => {
+    const control = event.target?.closest?.("[data-tag-filter]");
+    if (!control || !browser.contains(control)) return;
+    event.preventDefault();
+    applyFilter(control.dataset.tagFilter, true);
   });
 
   window.addEventListener("popstate", () => {
-    applyFilter(new URLSearchParams(window.location.search).get("tag") || "all", false);
+    applyFilter(new URLSearchParams(window.location.search).get("tag"), false);
   });
 
-  applyFilter(new URLSearchParams(window.location.search).get("tag") || "all", false);
+  applyFilter(new URLSearchParams(window.location.search).get("tag"), false);
 }
 
 setupArticleTagFilter();
