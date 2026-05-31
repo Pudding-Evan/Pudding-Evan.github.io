@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="GE属性修改案例"><title>Gas设计解析三：GE属性修改案例 | 楽園（Elysium）</title><link rel="stylesheet" href="../styles.css?v=26">
+    <script src="../site.js?v=26" defer></script>
+  </head>
+  <body>
+    <header class="site-header"><nav class="nav site-shell" aria-label="主导航"><a class="brand" href="../index.html"><span class="brand-mark">E</span>楽園 <span class="brand-sub">// ELYSIUM</span></a><div class="nav-links"><a href="../articles.html" aria-current="page">NOTE</a><a href="../videos.html">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></nav></header>
+    <main class="article site-shell">
+      <a class="text-link article-back" href="../articles.html">BACK TO ARTICLES</a>
+      <div class="meta"><span>GAS</span><span>2026.05.30</span><span>9 MIN READ</span></div>
+      <h1>Gas设计解析三：GE属性修改案例</h1>
+      <p>上一篇章提到 GE 对属性进行修改的两大方式：Modifier 与 Execution。其中 Modifier 又有四种 Magnitude 计算方式。这一偏结合实际项目案例，分别说明它们是如何运作的。</p>
+      <figure class="article-image"><img src="../assets/post-images/a20693e2d3b97257c8f7da88.png" alt="GE 属性修改方式概览" loading="lazy" decoding="async"><figcaption>GE 属性修改方式概览</figcaption></figure>
+      <h1>Modifier</h1>
+      <p>Modifier 这种方式一次只能对一个 Attribute 进行修改，并且需要给定一个修改方式，也就是 ModifierOp。</p>
+      <figure class="article-image"><img src="../assets/post-images/718a2ed756a704522c8153fb.png" alt="Modifier 配置示例" loading="lazy" decoding="async"><figcaption>Modifier 配置示例</figcaption></figure>
+      <p>GE 中保存 Modifier 的成员大致如下：</p>
+      <pre><code class="language-cpp">UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = GameplayEffect, meta = (TitleProperty = Attribute))
+TArray&lt;FGameplayModifierInfo&gt; Modifiers;</code></pre>
+      <p><code>FGameplayModifierInfo</code> 中最重要的是三个信息：</p>
+      <pre><code class="language-cpp">UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = GameplayModifier)
+FGameplayAttribute Attribute;
+
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = GameplayModifier)
+TEnumAsByte&lt;EGameplayModOp::Type&gt; ModifierOp;
+
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = GameplayModifier)
+FGameplayEffectModifierMagnitude ModifierMagnitude;</code></pre>
+      <p><code>Attribute</code> 决定修改谁，<code>ModifierOp</code> 决定怎么修改，<code>ModifierMagnitude</code> 决定修改多少。</p>
+      <p>Magnitude 的定义中包含四种方式：</p>
+      <pre><code class="language-cpp">UPROPERTY(EditDefaultsOnly, Category = Magnitude)
+TEnumAsByte&lt;EGameplayEffectMagnitudeCalculation::Type&gt; MagnitudeCalculationType;
+
+UPROPERTY(EditDefaultsOnly, Category = Magnitude)
+FScalableFloat ScalableFloatMagnitude;
+
+UPROPERTY(EditDefaultsOnly, Category = Magnitude)
+FAttributeBasedFloat AttributeBasedMagnitude;
+
+UPROPERTY(EditDefaultsOnly, Category = Magnitude)
+FCustomCalculationBasedFloat CustomMagnitude;
+
+UPROPERTY(EditDefaultsOnly, Category = Magnitude)
+FSetByCallerFloat SetByCallerMagnitude;</code></pre>
+      <figure class="article-image"><img src="../assets/post-images/90574c6a4b406edfdde9dc3f.png" alt="ModifierMagnitude 结构" loading="lazy" decoding="async"><figcaption>ModifierMagnitude 结构</figcaption></figure>
+      <p>实际上，这些方法都是为了拿到一个 float。</p>
+      <p>可以直接看 <code>FGameplayEffectModifierMagnitude::AttemptCalculateMagnitude</code>。它会根据 <code>MagnitudeCalculationType</code> 选择不同分支，最终写出 <code>OutCalculatedMagnitude</code>：</p>
+      <pre><code class="language-cpp">ScalableFloat       -&gt; ScalableFloatMagnitude.GetValueAtLevel()
+AttributeBased      -&gt; AttributeBasedMagnitude.CalculateMagnitude()
+CustomCalculation   -&gt; CustomMagnitude.CalculateMagnitude()
+SetByCaller         -&gt; Spec.GetSetByCallerMagnitude()</code></pre>
+      <p>在 Spec 创建或更新时，计算出来的临时值会存储在：</p>
+      <pre><code class="language-cpp">TArray&lt;FModifierSpec&gt; Modifiers;</code></pre>
+      <p><code>FModifierSpec</code> 本身非常朴素，核心就是一个 <code>EvaluatedMagnitude</code>。因此 Modifier 的第一步不是直接改属性，只是把“这次要用的数值”算出来。</p>
+      <p>而真正执行修改时，从下面这条路径进入：</p>
+      <pre><code class="language-cpp">FActiveGameplayEffectsContainer::ExecuteActiveEffectsFrom
+  FGameplayEffectSpec::GetModifierMagnitude
+    GameplayEffectUtilities::ComputeStackedModifierMagnitude
+  FActiveGameplayEffectsContainer::InternalExecuteMod
+    UAttributeSet::PreGameplayEffectExecute
+    UAbilitySystemComponent::ApplyModToAttribute
+    UAttributeSet::PostGameplayEffectExecute</code></pre>
+      <p>这里可以看到几个关键点：</p>
+      <ol>
+      <li>Modifier 先算出 Magnitude。</li>
+      <li>如果需要计入 Stack，会通过 <code>ComputeStackedModifierMagnitude</code> 处理。</li>
+      <li>系统把 Attribute、ModifierOp、Magnitude 包成 <code>FGameplayModifierEvaluatedData</code>。</li>
+      <li><code>InternalExecuteMod</code> 找到目标 AttributeSet。</li>
+      <li>执行 <code>PreGameplayEffectExecute</code>。</li>
+      <li>调用 <code>ApplyModToAttribute</code> 修改属性。</li>
+      <li>执行 <code>PostGameplayEffectExecute</code>。</li>
+      </ol>
+      <p>这个流程看上去很长，但核心仍然是那句话：算出一个 float，然后按一种操作方式应用到一个 Attribute 上。</p>
+      <h2>Scalable Float</h2>
+      <p>如图，这个配置代表：当 GE 应用时，对属性 <code>Health</code> 加上 20。</p>
+      <figure class="article-image"><img src="../assets/post-images/ac3da7813f0424c0abb3654d.png" alt="ScalableFloat 修改 Health" loading="lazy" decoding="async"><figcaption>ScalableFloat 修改 Health</figcaption></figure>
+      <p>假设配置如下：</p>
+      <ul>
+      <li>Attribute：<code>Health</code></li>
+      <li>ModifierOp：<code>Add</code></li>
+      <li>Magnitude：<code>ScalableFloat = 20</code></li>
+      <li>DurationPolicy：<code>Instant</code></li>
+      </ul>
+      <p>当这个 GE 被应用时，Spec 中对应 Modifier 的 <code>EvaluatedMagnitude</code> 就是 20。</p>
+      <p>执行阶段会生成：</p>
+      <pre><code class="language-cpp">FGameplayModifierEvaluatedData EvalData(
+	HealthAttribute,
+	EGameplayModOp::Additive,
+	20.f
+);</code></pre>
+      <p>之后进入 <code>InternalExecuteMod</code>。对于 Instant GE，它会直接修改 Attribute 的 BaseValue。假设原本 Health 的 BaseValue 是 60，那么这次执行后 BaseValue 变成 80。由于这里没有额外的持续 Modifier 参与当前值计算，CurrentValue 也会跟着变成 80。</p>
+      <p>如果同样的 Modifier 放在 Duration 或 Infinite GE 里，它通常不会直接把 BaseValue 改掉，而是在 GE 生效期间持续参与属性计算，影响 CurrentValue。GE 移除后，这个 Modifier 不再参与计算，CurrentValue 会按剩余效果重新计算。</p>
+      <p>所以同样是 <code>Health +20</code>：</p>
+      <ul>
+      <li>Instant GE 更像把账本改成 80。</li>
+      <li>Duration/Infinite GE 更像在账本旁边挂一个临时加成，当前显示 80，效果结束后回到原值。</li>
+      </ul>
+      <p>这也是 BaseValue 和 CurrentValue 分开的意义。</p>
+      <h3>Stack 下的 Magnitude</h3>
+      <p>如果 GE 有 Stack，并且配置了让 Stack 影响 Modifier Magnitude，系统会调用：</p>
+      <pre><code class="language-cpp">GameplayEffectUtilities::ComputeStackedModifierMagnitude(
+	BaseComputedMagnitude,
+	StackCount,
+	ModifierOp
+);</code></pre>
+      <p>它的核心思路是先减去该操作的 Bias，再乘以 StackCount，最后加回 Bias。</p>
+      <p>Add 的 Bias 是 0。比如 <code>+20</code> 叠 3 层：</p>
+      <pre><code class="language-text">(20 - 0) * 3 + 0 = 60</code></pre>
+      <p>Multiply 和 Divide 的 Bias 是 1。比如 <code>*1.5</code> 叠 3 层：</p>
+      <pre><code class="language-text">(1.5 - 1) * 3 + 1 = 2.5</code></pre>
+      <p>它不是 <code>1.5 * 1.5 * 1.5</code>。如果想要复合乘法，需要使用对应的 Compound Multiply 路径。这里是 GAS 里很容易踩到的地方，代码没有骗你，只是它的数学审美比较直。</p>
+      <p>Duration 和 Infinite GE 中，多个 Modifier 会按操作类型共同参与 CurrentValue 计算。常见公式可以理解为：</p>
+      <pre><code class="language-text">Final = ((Base + Additive) * Multiplicative / Division * CompoundMultiply) + FinalAdd</code></pre>
+      <p>其中 Override 最特殊。只要存在符合条件的 Override Modifier，当前值会直接使用 Override 的值，不再继续套上面的公式。</p>
+      <p>举个例子：</p>
+      <ul>
+      <li>Base = 16</li>
+      <li>Additive = +20</li>
+      <li>Multiplicative = *1.5</li>
+      </ul>
+      <p>结果是：</p>
+      <pre><code class="language-text">(16 + 20) * 1.5 = 54</code></pre>
+      <p>如果同时有两个普通 Multiply：<code>*1.5</code> 和 <code>*1.2</code>，GAS 默认的求和方式不是直接相乘，而是：</p>
+      <pre><code class="language-text">1 + (1.5 - 1) + (1.2 - 1) = 1.7</code></pre>
+      <p>所以它们会形成 <code>*1.7</code>，不是 <code>*1.8</code>。写数值系统时这点要提前和策划说明，否则 Debug 时很容易互相怀疑公式写错了。</p>
+      <h2>AttributeBased</h2>
+      <p>AttributeBased 的用途是：用某个 Source 或 Target Attribute 来计算本次 Modifier Magnitude。</p>
+      <p>例如：</p>
+      <ul>
+      <li>治疗量 = 施法者法强 * 0.8 + 20</li>
+      <li>伤害 = 攻击者攻击力 - 目标护甲</li>
+      <li>护盾值 = 目标最大生命值 * 0.3</li>
+      </ul>
+      <p>它需要配置一个捕获属性：</p>
+      <ul>
+      <li>捕获 Source 还是 Target。</li>
+      <li>捕获哪个 Attribute。</li>
+      <li>是否 Snapshot。</li>
+      <li>使用 BaseValue、Current Magnitude、Bonus Magnitude，还是评估到某个通道。</li>
+      </ul>
+      <p>Snapshot 的意思是：在 Spec 创建时把值固定下来。后续源属性再变，这个 Spec 中的捕获值也不变。</p>
+      <p>非 Snapshot 则会在需要计算时读取当前值。它更动态，但也更依赖当前 ASC 上的状态。预测时如果客户端和服务端看到的属性不同，结果就可能先预测一个值，随后被服务端纠正。</p>
+      <p>源码中 <code>FAttributeBasedFloat::CalculateMagnitude</code> 的核心公式是：</p>
+      <pre><code class="language-text">Result = (Coefficient * (AttribValue + PreMultiplyAdditiveValue)) + PostMultiplyAdditiveValue</code></pre>
+      <p>如果配置了 Curve，还会先用 Curve 对捕获到的属性值做一次映射。</p>
+      <p>举个例子：</p>
+      <ul>
+      <li>捕获 Source 的 <code>AttackPower</code></li>
+      <li>AttackPower = 100</li>
+      <li>Coefficient = 0.5</li>
+      <li>PreMultiplyAdditiveValue = 20</li>
+      <li>PostMultiplyAdditiveValue = 10</li>
+      </ul>
+      <p>结果是：</p>
+      <pre><code class="language-text">0.5 * (100 + 20) + 10 = 70</code></pre>
+      <p>AttributeBased 适合表达简单、纯数据驱动的公式。如果公式开始需要读取多个属性、判断 Tag、区分暴击、护盾、格挡，就不要硬塞在这里，改用 MMC 或 Execution。</p>
+      <h2>MMC</h2>
+      <p>MMC 指 <code>UGameplayModMagnitudeCalculation</code>，也就是 CustomCalculationClass。</p>
+      <p>它仍然属于 Modifier 的一种 Magnitude 计算方式。区别在于，这个 float 不再通过配置直接算，而是交给 C++ 或蓝图类：</p>
+      <pre><code class="language-cpp">float UMyDamageMMC::CalculateBaseMagnitude_Implementation(
+	const FGameplayEffectSpec&amp; Spec) const
+{
+	// 读取 Spec、Captured Attribute、SetByCaller、Tag，然后返回一个 float
+	return Damage;
+}</code></pre>
+      <p>MMC 可以：</p>
+      <ul>
+      <li>捕获 Source 或 Target Attribute。</li>
+      <li>读取 Source/Target Tag。</li>
+      <li>读取 <code>FGameplayEffectContext</code>。</li>
+      <li>读取 SetByCaller 传入的运行时值。</li>
+      <li>根据 GE Level 做计算。</li>
+      </ul>
+      <p>但它最终只能返回一个 float。因此 MMC 仍然适合“算一个 Modifier 的值”，不适合“一次修改多个属性”。</p>
+      <p>MMC 可以被预测，前提是这次 GE 本身在有效预测窗口里应用，并且 MMC 使用的数据在客户端也可靠可得。如果 MMC 读取了只有服务端知道的数据，客户端当然无法算出同一个结果。预测不能凭空补齐不存在的数据。</p>
+      <p>一个常见写法是：</p>
+      <pre><code class="language-cpp">const float ChargeTime = Spec.GetSetByCallerMagnitude(
+	TAG_Data_ChargeTime,
+	false,
+	0.f
+);
+
+float AttackPower = 0.f;
+GetCapturedAttributeMagnitude(AttackPowerDef, Spec, EvaluationParameters, AttackPower);
+
+return AttackPower * FMath::Clamp(ChargeTime, 0.f, 2.f);</code></pre>
+      <p>这里 SetByCaller 提供运行时蓄力时间，Captured Attribute 提供角色属性，MMC 负责把它们组合成一个最终数值。</p>
+      <h2>SetByCaller</h2>
+      <p>SetByCaller 表示这个 Magnitude 不在 GE 资产中写死，而是在运行时写入 Spec。</p>
+      <p>例如：</p>
+      <pre><code class="language-cpp">FGameplayEffectSpecHandle SpecHandle = ASC-&gt;MakeOutgoingSpec(
+	DamageEffectClass,
+	AbilityLevel,
+	EffectContext
+);
+
+SpecHandle.Data-&gt;SetSetByCallerMagnitude(
+	TAG_Data_Damage,
+	FinalDamage
+);
+
+ASC-&gt;ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);</code></pre>
+      <p>GE 中的 Modifier 配置使用同一个 GameplayTag 作为 Key，就可以从 Spec 中取到 <code>FinalDamage</code>。</p>
+      <p>SetByCaller 适合这些情况：</p>
+      <ul>
+      <li>蓄力技能，根据按住时间决定伤害。</li>
+      <li>投射物命中后，根据飞行距离决定伤害。</li>
+      <li>技能外部已经算好伤害，只需要交给 GE 应用。</li>
+      <li>同一个 GE 资产被多个 Ability 复用，每次传入不同数值。</li>
+      </ul>
+      <p>注意，如果 GE 中配置了 SetByCaller，但应用前没有给 Spec 写入对应值，源码会按默认值返回，并根据参数决定是否打印警告。尤其是 Division 这类操作，缺省值如果是 0，日志和结果都会很难看。</p>
+      <h1>Execution</h1>
+      <p>Execution 指 <code>UGameplayEffectExecutionCalculation</code>。它和 MMC 最大的不同是：MMC 返回一个 float，Execution 可以输出多个属性修改。</p>
+      <p>典型入口如下：</p>
+      <pre><code class="language-cpp">void UMyDamageExecution::Execute_Implementation(
+	const FGameplayEffectCustomExecutionParameters&amp; ExecutionParams,
+	FGameplayEffectCustomExecutionOutput&amp; OutExecutionOutput) const
+{
+	// 读取 Source/Target Attribute、Tag、SetByCaller、Context
+	// 计算伤害、护盾扣减、生命扣减等
+
+	OutExecutionOutput.AddOutputModifier(
+		FGameplayModifierEvaluatedData(
+			HealthAttribute,
+			EGameplayModOp::Additive,
+			-DamageToHealth
+		)
+	);
+}</code></pre>
+      <p>Execution 可以做这些事：</p>
+      <ul>
+      <li>读取多个 Source/Target Attribute。</li>
+      <li>根据 Source/Target Tag 修正公式。</li>
+      <li>使用 SetByCaller 作为输入。</li>
+      <li>根据 EffectContext 读取命中结果、伤害来源、物理材质等项目自定义数据。</li>
+      <li>输出多个 <code>FGameplayModifierEvaluatedData</code>。</li>
+      <li>触发 Conditional GameplayEffect。</li>
+      <li>手动声明 GameplayCue 或 StackCount 是否已经处理。</li>
+      </ul>
+      <p>例如一个伤害结算：</p>
+      <ol>
+      <li>读取 SetByCaller 中的基础伤害。</li>
+      <li>捕获攻击者的 AttackPower。</li>
+      <li>捕获目标的 Armor、Shield、DamageReduction。</li>
+      <li>根据 Tag 判断是否暴击、是否格挡、是否无敌。</li>
+      <li>先扣 Shield，再扣 Health。</li>
+      <li>输出两个 Modifier：<code>Shield -X</code>、<code>Health -Y</code>。</li>
+      </ol>
+      <p>这种逻辑用 Modifier 和 MMC 也许能绕出来，但会很别扭。Execution 就是为这类服务端结算准备的，但代价是Execution 不能被预测。源码和文档都很明确：ExecutionCalculation 不走客户端预测。原因也很直接，它可以做的事情太多，输入来源也太复杂，客户端不一定拥有同样数据。最终结果应当由服务端计算，再同步给客户端。</p>
+      <h1>一次属性修改的完整路径</h1>
+      <p>把上面的内容串起来，一个 Instant GE 修改属性的大致路径是：</p>
+      <pre><code class="language-text">ASC ApplyGameplayEffectSpecToSelf
+  -&gt; 检查权限、Tag、概率、免疫、自定义要求
+  -&gt; Spec.CalculateModifierMagnitudes
+  -&gt; ActiveGameplayEffects.ExecuteActiveEffectsFrom
+      -&gt; 遍历 Modifiers
+      -&gt; 计算/读取 EvaluatedMagnitude
+      -&gt; 处理 Stack Magnitude
+      -&gt; 生成 FGameplayModifierEvaluatedData
+      -&gt; InternalExecuteMod
+          -&gt; 找到 AttributeSet
+          -&gt; PreGameplayEffectExecute
+          -&gt; ApplyModToAttribute
+          -&gt; PostGameplayEffectExecute</code></pre>
+      <p>Duration 和 Infinite GE 的路径略有不同。它们会进入 ActiveGameplayEffects，里面的 Modifier 在 GE 生效期间持续参与对应 Attribute 的 CurrentValue 计算。GE 被移除时，这些 Modifier 不再参与计算，CurrentValue 会根据剩余效果重新计算。</p>
+      <p>Periodic GE 则介于两者之间：它本身是 Duration 或 Infinite，但每次周期触发时，会像 Instant 一样执行一遍 Modifier/Execution。</p>
+      <h1>最佳食用指南</h1>
+      <p>面对一个 GE 属性修改时，可以先把它分成三档来看。</p>
+      <p>Modifier 是最常见、最通用的一档。它的模型很简单：修改一个 Attribute，选择一种 ModifierOp，再算出一个 Magnitude。固定治疗、固定消耗、简单 Buff、基于表格成长的数值，通常都应该优先考虑 Modifier。它的好处是清晰、数据化、容易预测，也更容易和 Stack、Tag Requirement、持续时间这些 GE 机制配合。</p>
+      <p>MMC 可以理解为“带一定自定义能力的 Modifier”。它仍然属于 Modifier 路线，最终也只是返回一个 float，但这个 float 可以交给 C++ 或蓝图类计算。当 ScalableFloat、AttributeBased、SetByCaller 这些配置项不够表达公式时，可以用 MMC。它适合“公式复杂了一点，但最终还是只想得到一个数”的场景。</p>
+      <p>Execution 是能力最强、也最灵活的一档。它可以读取更多上下文，做更完整的服务端结算，也可以一次输出多个属性修改。复杂伤害、护盾优先扣减、护甲减伤、暴击格挡、生命偷取这类逻辑，通常更适合 Execution。但它的代价也很明确：ExecutionCalculation 不支持预测，结果应该由服务端计算后同步给客户端。</p>
+      <p>所以粗略地说：</p>
+      <ul>
+      <li>常见、简单、可预测的属性修改，优先 Modifier。</li>
+      <li>需要自定义公式，但最后只产出一个数，用 MMC。</li>
+      <li>需要复杂结算、多个输出或强服务端裁决，用 Execution。</li>
+      </ul>
+      <p>至于 GE 的持续类型，则是另一个维度：一次性结算选 Instant，临时状态选 Duration 或 Infinite，周期跳伤害或回血选 Periodic。</p>
+      <h1>常见误区</h1>
+      <p>Modifier 支持预测，不等于所有 Modifier 结果都一定正确。预测依赖客户端拥有足够一致的输入。AttributeBased 和 MMC 如果读取了客户端没有的状态，最后仍然要等服务端修正。</p>
+      <p>Execution 很强，不等于所有伤害都要用 Execution。简单的固定治疗、固定消耗、简单 Buff，用 Modifier 更清楚。</p>
+      <p>SetByCaller 很灵活，不等于可以把所有公式都提前算好塞进去。它适合传入运行时变量，不适合把 GE 变成一个没有语义的“float 搬运工”。</p>
+      <p>Stack 的 Multiply 默认不是连乘。这个点值得单独记住。数值异常时先看 <code>ComputeStackedModifierMagnitude</code> 和多个 Modifier 的计算公式，不要先怀疑宇宙。</p>
+      <h1>本章结论</h1>
+      <p>GE 修改属性的核心是：先得到 Magnitude，再通过 ModifierOp 应用到 Attribute。</p>
+      <p>ScalableFloat 适合固定值和表驱动数值。AttributeBased 适合基于单个属性的简单公式。MMC 适合计算一个较复杂的 Magnitude。SetByCaller 适合运行时传值。Execution 适合服务端复杂结算和多属性输出。</p>
+      <p>适合断点观察的位置：</p>
+      <ul>
+      <li><code>FGameplayEffectSpec::CalculateModifierMagnitudes</code></li>
+      <li><code>FGameplayEffectModifierMagnitude::AttemptCalculateMagnitude</code></li>
+      <li><code>FAttributeBasedFloat::CalculateMagnitude</code></li>
+      <li><code>FCustomCalculationBasedFloat::CalculateMagnitude</code></li>
+      <li><code>FGameplayEffectSpec::SetSetByCallerMagnitude</code></li>
+      <li><code>FActiveGameplayEffectsContainer::ExecuteActiveEffectsFrom</code></li>
+      <li><code>FActiveGameplayEffectsContainer::InternalExecuteMod</code></li>
+      <li><code>GameplayEffectUtilities::ComputeStackedModifierMagnitude</code></li>
+      </ul>
+    </main>
+    <footer class="site-footer"><div class="footer-inner site-shell"><span>© 2026 楽園 // ELYSIUM</span><div class="footer-links"><a href="../articles.html">NOTE</a><a href="../videos.html">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></div></footer>
+  </body>
+</html>

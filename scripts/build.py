@@ -23,6 +23,7 @@ POSTS_DIR = ROOT / "posts"
 IMAGE_DIR = ROOT / "assets" / "post-images"
 IMAGE_MANIFEST = IMAGE_DIR / "manifest.json"
 POST_MANIFEST = POSTS_DIR / ".generated-posts.json"
+ARTICLE_SOURCE = ROOT / "content" / "articles.md"
 VIDEO_SOURCE = ROOT / "content" / "videos.md"
 HOME_START = "<!-- AUTO_POSTS_START -->"
 HOME_END = "<!-- AUTO_POSTS_END -->"
@@ -30,7 +31,8 @@ HOME_VIDEOS_START = "<!-- AUTO_VIDEOS_START -->"
 HOME_VIDEOS_END = "<!-- AUTO_VIDEOS_END -->"
 ARCHIVE_START = "<!-- AUTO_POSTS_START -->"
 ARCHIVE_END = "<!-- AUTO_POSTS_END -->"
-STYLE_VERSION = "20"
+STYLE_VERSION = "26"
+HOME_POST_TAG = "GAS"
 
 
 @dataclass
@@ -40,6 +42,7 @@ class Post:
     title: str
     published: str
     tag: str
+    order: int | None
     summary: str
     lead: str
     body: str
@@ -340,6 +343,43 @@ def estimate_read_minutes(markdown: str) -> int:
     return max(1, round((cjk_count + word_count) / 360))
 
 
+def parse_order(metadata: dict[str, str], source: Path) -> int | None:
+    raw_order = (metadata.get("顺序") or metadata.get("order") or "").strip()
+    if not raw_order:
+        return None
+    if not re.fullmatch(r"\d+", raw_order):
+        raise ValueError(f"{source.name} has an invalid order/顺序: {raw_order}")
+    return int(raw_order)
+
+
+def sort_by_date(posts: list[Post]) -> list[Post]:
+    return sorted(posts, key=lambda post: (post.published, post.slug), reverse=True)
+
+
+def sort_by_order(posts: list[Post]) -> list[Post]:
+    ordered = sorted(
+        [post for post in posts if post.order is not None],
+        key=lambda post: (post.order, post.published, post.slug),
+    )
+    unordered = sort_by_date([post for post in posts if post.order is None])
+    return ordered + unordered
+
+
+def tag_filter_value(tag: str) -> str:
+    return slugify(tag).lower()
+
+
+def posts_with_tag(posts: list[Post], tag: str) -> list[Post]:
+    return [post for post in posts if post.tag.casefold() == tag.casefold()]
+
+
+def tag_options(posts: list[Post]) -> list[str]:
+    tags: dict[str, str] = {}
+    for post in sort_by_date(posts):
+        tags.setdefault(post.tag.casefold(), post.tag)
+    return list(tags.values())
+
+
 def parse_bvid(value: str) -> str:
     match = re.search(r"BV[0-9A-Za-z]+", value)
     if not match:
@@ -349,6 +389,81 @@ def parse_bvid(value: str) -> str:
 
 def split_markdown_table_row(line: str) -> list[str]:
     return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def normalize_article_key(value: str) -> str:
+    return value.strip().replace("\\", "/").casefold()
+
+
+def article_source_keys(source: Path) -> set[str]:
+    relative = source.relative_to(ROOT).as_posix()
+    return {
+        normalize_article_key(relative),
+        normalize_article_key(source.name),
+        normalize_article_key(source.stem),
+    }
+
+
+def load_article_metadata() -> dict[str, dict[str, str]]:
+    if not ARTICLE_SOURCE.exists():
+        return {}
+
+    rows = [
+        line.strip()
+        for line in ARTICLE_SOURCE.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("|") and line.strip().endswith("|")
+    ]
+    if len(rows) < 3:
+        return {}
+
+    headers = [header.strip().casefold() for header in split_markdown_table_row(rows[0])]
+    aliases = {
+        "file": {"file", "path", "source", "文章", "文件", "源文件"},
+        "title": {"title", "标题", "標題"},
+        "date": {"date", "published", "日期", "发布时间"},
+        "tag": {"tag", "tags", "标签", "標籤"},
+        "summary": {"summary", "摘要", "简介", "簡介"},
+        "lead": {"lead", "导语", "導語"},
+        "order": {"order", "顺序", "排序"},
+        "slug": {"slug", "链接名"},
+        "draft": {"draft", "草稿"},
+    }
+
+    def column(name: str) -> int | None:
+        for index, header_name in enumerate(headers):
+            if header_name in aliases[name]:
+                return index
+        return None
+
+    file_column = column("file")
+    if file_column is None:
+        raise ValueError(f"{ARTICLE_SOURCE.relative_to(ROOT)} needs a file column")
+
+    columns = {
+        name: column(name)
+        for name in ("title", "date", "tag", "summary", "lead", "order", "slug", "draft")
+    }
+    metadata_by_key: dict[str, dict[str, str]] = {}
+    for raw_row in rows[2:]:
+        cells = split_markdown_table_row(raw_row)
+        if file_column >= len(cells) or not cells[file_column].strip():
+            continue
+        file_value = cells[file_column].strip()
+        metadata: dict[str, str] = {}
+        for name, index in columns.items():
+            if index is not None and index < len(cells) and cells[index].strip():
+                metadata[name] = cells[index].strip()
+        keys = {
+            normalize_article_key(file_value),
+            normalize_article_key(Path(file_value).name),
+            normalize_article_key(Path(file_value).stem),
+        }
+        for key in keys:
+            existing = metadata_by_key.get(key)
+            if existing is not None and existing != metadata:
+                raise ValueError(f"Duplicate article metadata key in {ARTICLE_SOURCE.name}: {file_value}")
+            metadata_by_key[key] = metadata
+    return metadata_by_key
 
 
 def load_videos() -> list[Video]:
@@ -413,6 +528,7 @@ def load_videos() -> list[Video]:
 def load_posts(image_cache: ImageCache) -> list[Post]:
     posts: list[Post] = []
     seen_slugs: set[str] = set()
+    article_metadata = load_article_metadata()
     sources = [
         source
         for source_dir in SOURCE_DIRS
@@ -420,7 +536,14 @@ def load_posts(image_cache: ImageCache) -> list[Post]:
         for source in source_dir.glob("*.md")
     ]
     for source in sorted(sources):
-        metadata, markdown = parse_front_matter(source.read_text(encoding="utf-8"))
+        if source.name.startswith("_"):
+            continue
+        front_matter, markdown = parse_front_matter(source.read_text(encoding="utf-8"))
+        metadata = dict(front_matter)
+        for key in article_source_keys(source):
+            if key in article_metadata:
+                metadata.update(article_metadata[key])
+                break
         if metadata.get("draft", "").lower() in {"1", "true", "yes"}:
             continue
         title = metadata.get("title", "").strip() or first_heading(markdown)
@@ -436,20 +559,22 @@ def load_posts(image_cache: ImageCache) -> list[Post]:
             raise ValueError(f"{source.name} has an invalid date: {published}")
         summary = metadata.get("summary") or metadata.get("lead") or first_paragraph(markdown)
         lead = metadata.get("lead", "")
+        tag = (metadata.get("tag", "NOTE").strip() or "NOTE")
         posts.append(
             Post(
                 source=source,
                 slug=slug,
                 title=title,
                 published=published,
-                tag=metadata.get("tag", "NOTE").upper(),
+                tag=tag,
+                order=parse_order(metadata, source),
                 summary=summary,
                 lead=lead,
                 body=render_markdown(markdown, image_cache, source),
                 read_minutes=estimate_read_minutes(markdown),
             )
         )
-    return sorted(posts, key=lambda post: (post.published, post.slug), reverse=True)
+    return sort_by_date(posts)
 
 
 def header(prefix: str, description: str, title: str) -> str:
@@ -458,7 +583,7 @@ def header(prefix: str, description: str, title: str) -> str:
   <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="{html.escape(description)}"><title>{html.escape(title)} | 楽園（Elysium）</title><link rel="stylesheet" href="{prefix}styles.css?v={STYLE_VERSION}">
-    <script src="{prefix}site.js" defer></script>
+    <script src="{prefix}site.js?v={STYLE_VERSION}" defer></script>
   </head>
   <body>
     <header class="site-header"><nav class="nav site-shell" aria-label="主导航"><a class="brand" href="{prefix}index.html"><span class="brand-mark">E</span>楽園 <span class="brand-sub">// ELYSIUM</span></a><div class="nav-links"><a href="{prefix}articles.html" aria-current="page">NOTE</a><a href="{prefix}videos.html">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></nav></header>"""
@@ -494,11 +619,13 @@ def replace_generated_area(page: Path, start: str, end: str, generated: str) -> 
 
 def home_rows(posts: list[Post]) -> str:
     books = ["book_1_trim.png", "book_2_trim.png", "book_3_trim.png"]
+    book_classes = ["book-spine-red", "book-spine-blue", "book-spine-green"]
     rows = []
     for index, post in enumerate(posts[:5]):
+        book_index = index % len(books)
         rows.append(
-            '            <a class="book-spine" '
-            f'href="posts/{post.slug}.html"><img src="assets/{books[index % len(books)]}" alt="">'
+            f'            <a class="book-spine {book_classes[book_index]}" '
+            f'href="posts/{post.slug}.html"><img src="assets/{books[book_index]}" alt="">'
             f'<time class="book-date" datetime="{post.published}">{post.display_date}</time>'
             f"<h3>{html.escape(post.title)}</h3></a>"
         )
@@ -506,14 +633,35 @@ def home_rows(posts: list[Post]) -> str:
 
 
 def archive_rows(posts: list[Post]) -> str:
-    rows = []
-    for post in posts:
-        rows.append(
-            f'        <a class="note-row" href="posts/{post.slug}.html">'
-            f'<time class="archive-date" datetime="{post.published}">{post.display_date}</time>'
-            f"<div><h2>{html.escape(post.title)}</h2><p>{html.escape(post.summary)}</p></div></a>"
+    tags = tag_options(posts)
+    tag_links = [
+        '<a href="articles.html" data-tag-filter="all" aria-pressed="true">All</a>'
+    ]
+    for tag in tags:
+        tag_links.append(
+            f'<a href="articles.html?tag={html.escape(tag_filter_value(tag))}" '
+            f'data-tag-filter="{html.escape(tag_filter_value(tag))}" aria-pressed="false">'
+            f"{html.escape(tag)}</a>"
         )
-    return "\n".join(rows)
+    rows = []
+    for post in sort_by_date(posts):
+        rows.append(
+            f'          <a class="note-row" data-tag="{html.escape(tag_filter_value(post.tag))}" '
+            f'href="posts/{post.slug}.html">'
+            f'<time class="archive-date" datetime="{post.published}">{post.display_date}</time>'
+            f"<div><h2>{html.escape(post.title)}</h2></div></a>"
+        )
+    tag_links_html = "\n          ".join(tag_links)
+    rows_html = "\n".join(rows)
+    return (
+        '        <nav class="tag-filter" aria-label="按 Tag 筛选文章">\n'
+        f"          {tag_links_html}\n"
+        "        </nav>\n"
+        '        <div class="note-list">\n'
+        f"{rows_html}\n"
+        "        </div>\n"
+        '        <p class="archive-empty" data-archive-empty hidden>这个 Tag 下面还没有文章。</p>'
+    )
 
 
 def video_card(video: Video, indent: str = "        ") -> str:
@@ -543,7 +691,7 @@ def videos_page(videos: list[Video]) -> str:
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="楽園（Elysium）的 Vedio 内容。"><title>Vedio | 楽園（Elysium）</title><link rel="stylesheet" href="styles.css?v={STYLE_VERSION}"><script src="site.js" defer></script>
+    <meta name="description" content="楽園（Elysium）的 Vedio 内容。"><title>Vedio | 楽園（Elysium）</title><link rel="stylesheet" href="styles.css?v={STYLE_VERSION}"><script src="site.js?v={STYLE_VERSION}" defer></script>
   </head>
   <body>
     <header class="site-header"><nav class="nav site-shell" aria-label="主导航"><a class="brand" href="index.html"><span class="brand-mark">E</span>楽園 <span class="brand-sub">// ELYSIUM</span></a><div class="nav-links"><a href="articles.html">NOTE</a><a href="videos.html" aria-current="page">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></nav></header>
@@ -592,9 +740,10 @@ def main() -> None:
     image_cache = ImageCache(refresh_remote=args.refresh_images)
     posts = load_posts(image_cache)
     videos = load_videos()
+    home_posts = sort_by_order(posts_with_tag(posts, HOME_POST_TAG))
     write_posts(posts)
     write_videos(videos)
-    replace_generated_area(ROOT / "index.html", HOME_START, HOME_END, home_rows(posts))
+    replace_generated_area(ROOT / "index.html", HOME_START, HOME_END, home_rows(home_posts))
     replace_generated_area(
         ROOT / "index.html",
         HOME_VIDEOS_START,

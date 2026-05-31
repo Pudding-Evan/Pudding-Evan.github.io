@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="GameplayEffect"><title>Gas设计解析二：GameplayEffect | 楽園（Elysium）</title><link rel="stylesheet" href="../styles.css?v=26">
+    <script src="../site.js?v=26" defer></script>
+  </head>
+  <body>
+    <header class="site-header"><nav class="nav site-shell" aria-label="主导航"><a class="brand" href="../index.html"><span class="brand-mark">E</span>楽園 <span class="brand-sub">// ELYSIUM</span></a><div class="nav-links"><a href="../articles.html" aria-current="page">NOTE</a><a href="../videos.html">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></nav></header>
+    <main class="article site-shell">
+      <a class="text-link article-back" href="../articles.html">BACK TO ARTICLES</a>
+      <div class="meta"><span>GAS</span><span>2026.05.29</span><span>7 MIN READ</span></div>
+      <h1>Gas设计解析二：GameplayEffect</h1>
+      <p>上一篇说到，Attribute 的修改通常应该通过 GameplayEffect 进入系统。这一篇就看 GE 本身。GE 是 GAS 中最容易被误解的对象之一，因为它既能改属性，也能授予 Tag、授予 Ability、表达 Cost 和 Cooldown。它本质是一个数据化的配置，最终影响效果如何作用到 ASC 上。</p>
+      <p>GameplayEffect 可以理解为修改 Attribute 和 GameplayTag 的数据容器。它定义“发生了什么效果”，例如一次伤害、治疗、持续 Buff、冷却状态、免疫状态。</p>
+      <p>GE 有三种持续类型：</p>
+      <ol>
+      <li><code>Instant</code>：立即执行，执行完通常不保留 ActiveGameplayEffect。</li>
+      <li><code>Duration</code>：有持续时间，会进入 ActiveGameplayEffects。</li>
+      <li><code>Infinite</code>：无限持续，直到被主动移除。</li>
+      </ol>
+      <p>它只是一个定义单一游戏效果的数据类，或者叫 Buff 配置。不应该承载太多额外流程逻辑。流程逻辑应当在 GameplayAbility、AbilityTask、ExecutionCalculation 或项目自己的系统里完成。GE 的职责是把“这次效果如何影响 ASC”描述清楚。</p>
+      <figure class="article-image"><img src="../assets/post-images/ecb5bb7698ba049bbf64b16b.png" alt="GameplayEffect 基础配置" loading="lazy" decoding="async"><figcaption>GameplayEffect 基础配置</figcaption></figure>
+      <p>对于可以设定周期应用的 Duration 和 Infinite GE，每经过一段时间会执行一次 Effect。源码里这类 Periodic GameplayEffect 每次周期触发都会被当作 Instant 执行。值得注意的是，周期性 GE 不能被客户端预测。</p>
+      <h1>如何为自己添加 GE</h1>
+      <p>GameplayEffect 本身不是按使用次数实例化的对象。应用一个 GE 时，系统会从 <code>UGameplayEffect</code> 的 CDO 创建一个 <code>FGameplayEffectSpec</code>。Spec 再被应用到目标 ASC，并由 <code>FActiveGameplayEffectsContainer</code> 追踪。</p>
+      <figure class="article-image"><img src="../assets/post-images/ece5347a92bd1f832cb46735.png" alt="GameplayEffectSpec 创建与应用" loading="lazy" decoding="async"><figcaption>GameplayEffectSpec 创建与应用</figcaption></figure>
+      <p><code>FGameplayEffectSpec</code> 可以理解为“这次具体应用”的运行时数据。它保存：</p>
+      <ul>
+      <li>使用的是哪个 <code>UGameplayEffect</code> 定义。</li>
+      <li>GE 等级是多少。</li>
+      <li>谁是 Instigator，谁是 EffectCauser。</li>
+      <li>这次应用的 Context。</li>
+      <li>捕获到的 Source/Target Tag。</li>
+      <li>Modifier 运行时计算出的 Magnitude。</li>
+      <li>SetByCaller 传入的运行时值。</li>
+      </ul>
+      <p>简单说，GameplayEffect 是模板，GameplayEffectSpec 是这次应用的实例数据。名字里虽然没有 Instance，但它做的就是这件事。命名这块 GAS 一直很有自信。</p>
+      <p>实际保存在 ASC 中的也不是 <code>FGameplayEffectSpec</code>，而是 <code>FActiveGameplayEffect</code>。它会再包一层，附加开始时间、持续时间、周期执行时间、Stack 层数、预测 Key 等运行状态。</p>
+      <figure class="article-image"><img src="../assets/post-images/b522d0546e95c56476c939ff.png" alt="FActiveGameplayEffect 包装 Spec" loading="lazy" decoding="async"><figcaption>FActiveGameplayEffect 包装 Spec</figcaption></figure>
+      <p>两个核心入口：</p>
+      <pre><code class="language-cpp">UAbilitySystemComponent::ApplyGameplayEffectSpecToSelf()
+FActiveGameplayEffectsContainer::RemoveActiveEffects()</code></pre>
+      <p><code>ApplyGameplayEffectSpecToSelf</code> 会做一系列检查：</p>
+      <ol>
+      <li>是否有权限应用。服务端可以应用；客户端必须持有有效 PredictionKey 才能预测应用。</li>
+      <li>Attribute Modifier 是否满足应用条件。</li>
+      <li>概率、Tag Requirement、自定义 Application Requirement 是否通过。</li>
+      <li>是否被免疫规则阻挡。</li>
+      <li>是否能加入 ActiveGameplayEffects，或者作为 Instant GE 直接执行。</li>
+      <li>是否需要触发 Linked GameplayEffect、GameplayCue 和应用回调。</li>
+      </ol>
+      <p>最终，Duration 和 Infinite GE 会留在 <code>ActiveGameplayEffects</code> 中。Instant GE 会执行 Modifier 或 Execution 后结束。</p>
+      <h1>移除与堆叠</h1>
+      <p>Duration 和 Infinite GE 可以被移除。移除时系统不一定直接删除整个效果，也可能只是扣除 Stack 层数。</p>
+      <p>GE 的堆叠方式主要有两种：</p>
+      <ul>
+      <li><code>BySource</code>：按来源 ASC 分开计算层数。每个来源都有自己的层数限制。</li>
+      <li><code>ByTarget</code>：不关心来源，只看目标 ASC 上这个效果是否已经达到层数上限。</li>
+      </ul>
+      <figure class="article-image"><img src="../assets/post-images/f56acc09279700943de11170.png" alt="GameplayEffect Stack 配置" loading="lazy" decoding="async"><figcaption>GameplayEffect Stack 配置</figcaption></figure>
+      <p>堆叠时还会涉及：</p>
+      <ul>
+      <li>到达上限后是否刷新持续时间。</li>
+      <li>到达上限后是否刷新周期。</li>
+      <li>溢出时是否应用其他 GE。</li>
+      <li>移除一层时是否清空整个 Stack。</li>
+      </ul>
+      <p>所以 Stack 不只是一个整数。它和持续时间、周期、溢出效果、Tag 状态都有关系。写 Buff 系统时如果只看层数，很容易把“叠满以后发生什么”漏掉。</p>
+      <h1>GE 中的 Tag</h1>
+      <p>GameplayEffect 大量使用 GameplayTag。常见用途包括：</p>
+      <ul>
+      <li>Asset Tag：描述这个 GE 自身是什么。</li>
+      <li>Granted Tag：GE 激活期间授予目标 ASC 的标签。</li>
+      <li>Application Requirement：决定这个 GE 能不能应用。</li>
+      <li>Ongoing Requirement：决定这个 GE 当前是否处于生效状态。</li>
+      <li>Removal Requirement：决定是否移除已有 GE。</li>
+      <li>Immunity：决定是否免疫某类 GE。</li>
+      </ul>
+      <figure class="article-image"><img src="../assets/post-images/9c0f7efac3536ff788997b5a.png" alt="GameplayEffect Tag 配置" loading="lazy" decoding="async"><figcaption>GameplayEffect Tag 配置</figcaption></figure>
+      <p>通过这些 Tag，就可以完成效果互斥、状态门控和免疫判断。</p>
+      <p>例如角色有 <code>State.Invincible</code> 时，伤害 GE 被拒绝；角色有 <code>State.Stunned</code> 时，移动速度 Buff 的 Ongoing 条件不满足，于是效果还在，但 Modifier 暂时不生效。这样比在每个技能里写分支要干净得多。</p>
+      <p>Ongoing Requirement 和 Application Requirement 有一个重要区别：</p>
+      <ul>
+      <li>Application Requirement 决定“能不能进门”。</li>
+      <li>Ongoing Requirement 决定“进门之后当前能不能工作”。</li>
+      </ul>
+      <p>前者失败，GE 不会被应用。后者失败，GE 可以保留在 ActiveGameplayEffects 里，只是它授予的 Tag 和 Modifier 会暂时失效，等条件满足后再恢复。</p>
+      <h1>如何作用于属性</h1>
+      <p>GE 有两种主要方式修改 Attribute：</p>
+      <ol>
+      <li><code>GameplayEffectModifier</code></li>
+      <li><code>GameplayEffectExecutionCalculation</code></li>
+      </ol>
+      <p>Modifier 支持预测。ExecutionCalculation 不支持预测。</p>
+      <h2>GameplayEffectModifier</h2>
+      <p>Modifier 是 GE 成员变量中的一组配置：</p>
+      <figure class="article-image"><img src="../assets/post-images/7c3b28bbd109843fce24e442.png" alt="GameplayEffectModifier 配置" loading="lazy" decoding="async"><figcaption>GameplayEffectModifier 配置</figcaption></figure>
+      <p>一个 Modifier 修改一个 Attribute。它由三部分组成：</p>
+      <ol>
+      <li>修改哪个 Attribute。</li>
+      <li>使用什么操作：<code>Add</code>、<code>Multiply</code>、<code>Divide</code>、<code>Override</code>。</li>
+      <li>Magnitude 如何计算。</li>
+      </ol>
+      <p>一个 GE 可以有多个 Modifier，所以一次 GE 应用可以同时修改多个 Attribute。但每个 Modifier 自身仍然只负责一个 Attribute。</p>
+      <figure class="article-image"><img src="../assets/post-images/3d0d3e72de8864b86a0c06ce.png" alt="Modifier Magnitude 类型" loading="lazy" decoding="async"><figcaption>Modifier Magnitude 类型</figcaption></figure>
+      <p>Magnitude 主要有四种计算方式：</p>
+      <ul>
+      <li><code>ScalableFloat</code>：直接数值，或者按 Level 从 CurveTable/DataTable 取值。</li>
+      <li><code>AttributeBased</code>：基于 Source 或 Target 的某个 Attribute 计算。</li>
+      <li><code>CustomCalculationClass</code>：使用 <code>UGameplayModMagnitudeCalculation</code> 自定义计算，简称 MMC。</li>
+      <li><code>SetByCaller</code>：由外部在 Spec 上设置运行时数值。</li>
+      </ul>
+      <p>下一篇会结合案例展开这四种方式。</p>
+      <p>这里先总结一句：Modifier 会计算出一个 float，然后按照 ModifierOp 把这个 float 应用到目标 Attribute 上。它能力有限，但正因为有限，所以可预测、可同步、可组合。</p>
+      <h2>GameplayEffectExecutionCalculation</h2>
+      <p>ExecutionCalculation 是 GE 修改 ASC 最强的方式之一。</p>
+      <p>它通过 <code>UGameplayEffectExecutionCalculation::Execute_Implementation</code> 执行，可以读取捕获到的 Source/Target Attribute、Tag、EffectContext、SetByCaller 数据，并输出多个 <code>FGameplayModifierEvaluatedData</code>。</p>
+      <p>也就是说，它可以一次修改多个 Attribute，可以写复杂伤害公式，可以做护盾优先扣减、护甲减伤、生命偷取、暴击修正等逻辑。</p>
+      <p>代价也很明确：它不能被预测。</p>
+      <p>原因不难理解。ExecutionCalculation 允许项目代码执行任意逻辑，客户端很难保证自己和服务端拥有完全一致的输入、时序和结果。GAS 在这里选择让服务端裁决。客户端想提前表现，可以播放预测 Cue 或本地表现，但最终属性结果要等服务端。</p>
+      <h1>如何授予新的 Ability</h1>
+      <p>GE 还可以授予 Ability。</p>
+      <p>一种常见做法是：应用一个 GE，GE 在激活期间授予一个自动激活或可激活的 Ability。这个能力会在 GE 存在时有效，GE 被移除后能力也随之撤销。</p>
+      <figure class="article-image"><img src="../assets/post-images/4f98d32474bd5478a0463a16.png" alt="GameplayEffect 授予 Ability 配置" loading="lazy" decoding="async"><figcaption>GameplayEffect 授予 Ability 配置</figcaption></figure>
+      <p>入口仍然在 <code>ApplyGameplayEffectSpec</code> 一侧。大致调用栈可以观察到：</p>
+      <pre><code class="language-cpp">FActiveGameplayEffectsContainer::ApplyGameplayEffectSpec
+  FActiveGameplayEffectsContainer::InternalOnActiveGameplayEffectAdded
+    FActiveGameplayEffect::CheckOngoingTagRequirements
+      FActiveGameplayEffectsContainer::AddActiveGameplayEffectGrantedTagsAndModifiers</code></pre>
+      <figure class="article-image"><img src="../assets/post-images/ba8f87200b07ab695c0c8b8d.png" alt="GameplayEffect 授予 Ability 调用栈" loading="lazy" decoding="async"><figcaption>GameplayEffect 授予 Ability 调用栈</figcaption></figure>
+      <p>这个机制适合做装备技能、状态技能、临时被动等内容。</p>
+      <p>例如拾取某件武器后应用一个 Infinite GE，它授予 <code>GA_WeaponFire</code>。卸下武器时移除 GE，Ability 自动失效。这样能力来源和能力生命周期能绑在一起，不需要到处手写 Give/Remove Ability。</p>
+      <h1>为什么免疫这么特殊</h1>
+      <p>上文提到，GE 可以通过 Tag Requirement 做互斥和阻挡。但 GE 仍然提供了单独的 Immunity 配置。</p>
+      <figure class="article-image"><img src="../assets/post-images/c69db6455b764fd32c3fe14e.png" alt="GameplayEffect Immunity 配置" loading="lazy" decoding="async"><figcaption>GameplayEffect Immunity 配置</figcaption></figure>
+      <p>单独提供 Immunity 的一个原因是它能触发更明确的阻挡回调，例如：</p>
+      <pre><code class="language-cpp">UAbilitySystemComponent::OnImmunityBlockGameplayEffectDelegate</code></pre>
+      <p>这样项目可以在“效果被免疫”时做专门表现，例如播放格挡反馈、记录战斗日志。</p>
+      <figure class="article-image"><img src="../assets/post-images/f58d9a293e2580bafa261acb.png" alt="免疫规则示例" loading="lazy" decoding="async"><figcaption>免疫规则示例</figcaption></figure>
+      <p>无论是 Tag Requirement 还是 Immunity，最终都是在 GE 应用流程中检查。源码入口仍然能在 <code>ApplyGameplayEffectSpecToSelf</code> 附近看到。</p>
+      <figure class="article-image"><img src="../assets/post-images/39ae37597b480ed1b01d282c.png" alt="ApplyGameplayEffectSpecToSelf 中的免疫检测" loading="lazy" decoding="async"><figcaption>ApplyGameplayEffectSpecToSelf 中的免疫检测</figcaption></figure>
+      <p>所以可以这样理解：Tag Requirement 更像“通用门禁”，Immunity 更像“带通知能力的专用门禁”。</p>
+      <p>功能上都能挡住 GE，但 Immunity 给了更明确的语义和回调。</p>
+      <h1>特殊的 GE Cost</h1>
+      <p>Cost GE 是 GameplayAbility 专门使用的一类 GE。它的目的是描述激活 GA 时需要消耗的 Attribute。</p>
+      <p>一般来说，Cost GE 应该是 Instant，并带有一个或多个 Attribute 减值 Modifier。例如消耗 20 点 Mana，就给 Mana 一个 <code>Add -20</code> 的 Modifier。</p>
+      <p>激活 Ability 前，<code>CheckCost</code> 会检查当前属性是否足够支付。真正激活后，<code>ApplyCost</code> 会应用 Cost GE。</p>
+      <p>Cost GE 常见写法：</p>
+      <ul>
+      <li>固定消耗：使用 ScalableFloat。</li>
+      <li>根据技能等级变化：使用 ScalableFloat + 曲线。</li>
+      <li>根据蓄力时间变化：使用 SetByCaller。</li>
+      <li>根据角色属性变化：使用 MMC 或 AttributeBased。</li>
+      </ul>
+      <p>Cost GE 不应该顺手写复杂技能逻辑。它的名字已经说得很清楚：只管成本。能把账算明白就很好。</p>
+      <h1>特殊的 GE Cooldown</h1>
+      <p>Cooldown GE 也是 GameplayAbility 专门使用的一类 GE。它通常是 Duration GE，并在持续期间授予一个 Cooldown Tag。</p>
+      <p>例如：</p>
+      <ul>
+      <li><code>Cooldown.Fireball</code></li>
+      <li><code>Cooldown.Dash</code></li>
+      <li><code>Cooldown.Weapon.Primary</code></li>
+      </ul>
+      <p>激活 Ability 前，<code>CheckCooldown</code> 会检查 ASC 上是否已经存在对应 Cooldown Tag。如果存在，就不能再次激活。</p>
+      <p>激活成功后，<code>ApplyCooldown</code> 应用 Cooldown GE。GE 持续期间授予 Cooldown Tag；持续时间结束后，GE 被移除，Tag 也随之消失。</p>
+      <p>Cooldown GE 的核心不是改 Attribute，而是授予 Tag 和记录持续时间。把冷却状态变成 Tag 后，UI、输入、技能互斥都可以查询同一套数据。</p>
+      <h1>总结</h1>
+      <p>GameplayEffect 是 GAS 中描述“效果如何作用于 ASC”的数据模板。应用时会生成 Spec，进入 ActiveGameplayEffects 后再由 ActiveGameplayEffect 追踪运行状态。</p>
+      <p>GE 可以通过 Modifier 修改 Attribute，也可以通过 ExecutionCalculation 做复杂服务端结算；可以授予 Tag、授予 Ability、表达 Cost、表达 Cooldown，还能处理 Stack、Immunity 和 Ongoing 条件。</p>
+      <p>下一篇会把“GE 如何修改 Attribute”单独拆出来，用 Modifier、AttributeBased、MMC、SetByCaller 和 Execution 这几种方式顺着源码走一遍。</p>
+      <p>关键代码:</p>
+      <ul>
+      <li><code>UAbilitySystemComponent::ApplyGameplayEffectSpecToSelf</code></li>
+      <li><code>FActiveGameplayEffectsContainer::ApplyGameplayEffectSpec</code></li>
+      <li><code>FActiveGameplayEffectsContainer::ExecuteActiveEffectsFrom</code></li>
+      <li><code>FActiveGameplayEffectsContainer::InternalExecuteMod</code></li>
+      <li><code>FActiveGameplayEffect::CheckOngoingTagRequirements</code></li>
+      <li><code>UGameplayAbility::CheckCost</code></li>
+      <li><code>UGameplayAbility::ApplyCooldown</code></li>
+      </ul>
+    </main>
+    <footer class="site-footer"><div class="footer-inner site-shell"><span>© 2026 楽園 // ELYSIUM</span><div class="footer-links"><a href="../articles.html">NOTE</a><a href="../videos.html">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></div></footer>
+  </body>
+</html>

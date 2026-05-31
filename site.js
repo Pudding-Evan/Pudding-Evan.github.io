@@ -65,6 +65,62 @@ function buildSideDecor() {
 
 buildSideDecor();
 
+function setupArticleTagFilter() {
+  const browser = document.querySelector("[data-article-browser]");
+  if (!browser) return;
+
+  const controls = Array.from(browser.querySelectorAll("[data-tag-filter]"));
+  const rows = Array.from(browser.querySelectorAll("[data-tag]"));
+  const empty = browser.querySelector("[data-archive-empty]");
+  if (!controls.length || !rows.length) return;
+
+  const availableTags = new Set(controls.map((control) => control.dataset.tagFilter));
+
+  function applyFilter(nextTag, updateUrl) {
+    const activeTag = availableTags.has(nextTag) ? nextTag : "all";
+    let visibleCount = 0;
+
+    controls.forEach((control) => {
+      control.setAttribute("aria-pressed", String(control.dataset.tagFilter === activeTag));
+    });
+
+    rows.forEach((row) => {
+      const visible = activeTag === "all" || row.dataset.tag === activeTag;
+      row.hidden = !visible;
+      if (visible) visibleCount += 1;
+    });
+
+    if (empty) {
+      empty.hidden = visibleCount > 0;
+    }
+
+    if (updateUrl) {
+      const url = new URL(window.location.href);
+      if (activeTag === "all") {
+        url.searchParams.delete("tag");
+      } else {
+        url.searchParams.set("tag", activeTag);
+      }
+      window.history.pushState({ tag: activeTag }, "", url);
+    }
+  }
+
+  controls.forEach((control) => {
+    control.addEventListener("click", (event) => {
+      event.preventDefault();
+      applyFilter(control.dataset.tagFilter || "all", true);
+    });
+  });
+
+  window.addEventListener("popstate", () => {
+    applyFilter(new URLSearchParams(window.location.search).get("tag") || "all", false);
+  });
+
+  applyFilter(new URLSearchParams(window.location.search).get("tag") || "all", false);
+}
+
+setupArticleTagFilter();
+
 if ("serviceWorker" in navigator && /^https?:$/.test(window.location.protocol)) {
   window.addEventListener("load", () => {
     const workerUrl = new URL("sw.js", siteScript?.src || window.location.href);

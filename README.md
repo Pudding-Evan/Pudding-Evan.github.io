@@ -11,16 +11,10 @@ content/posts/my-new-note.md
 -> posts/my-new-note.html
 ```
 
-推荐每篇文章使用下面的格式：
+文章正文只需要保留 Markdown 内容，推荐用第一行 `# 标题` 开始：
 
 ```md
----
-title: 我的新文章
-date: 2026-05-30
-tag: DEV_NOTE
-summary: 显示在文章列表中的一句话摘要。
-lead: 可选。显示在正文标题下方的引导文字。
----
+# 我的新文章
 
 正文从这里开始。
 
@@ -29,9 +23,19 @@ lead: 可选。显示在正文标题下方的引导文字。
 支持段落、列表、链接、引用、代码块和图片。
 ```
 
-你也可以直接复制模板文件开始写：[content/posts/_template.md](content/posts/_template.md)。模板里有 `draft: true`，不会被发布；复制成新文件后，把 `draft: true` 删除或改成 `draft: false` 即可发布。
+文章的标题、日期、Tag、摘要和顺序统一维护在 `content/articles.md`，格式和 `content/videos.md` 类似：
 
-如果没有 `---` front matter，生成器会从第一行 `# 标题` 自动推断文章标题，并用文件修改时间作为日期。也就是说你现在这种普通 Markdown 仍然能用，只是固定模板更适合长期维护。
+```md
+| file | title | date | tag | summary | 顺序 |
+| --- | --- | --- | --- | --- | --- |
+| my-new-note.md | 我的新文章 | 2026-05-30 | DEV_NOTE | 显示在文章列表中的一句话摘要。 | 1 |
+```
+
+`顺序` 是可选字段，适合 GAS 这种系列文章；设置后首页的同 Tag 文章会按 `1、2、3...` 排列。没有设置 `顺序` 的文章仍按日期从新到旧排列。现在首页展示的是 `GAS` 这个 Tag 下的文章。
+
+你也可以直接复制模板文件开始写：[content/posts/_template.md](content/posts/_template.md)。`_` 开头的模板文件不会被发布；复制成新文件后，在 `content/articles.md` 里补一行字段即可发布。
+
+生成器仍然兼容每篇文章开头的 `---` front matter，但集中表会优先覆盖它。日常维护更推荐只改 `content/articles.md`。
 
 添加或替换 `.md` 文件后，运行：
 
@@ -108,6 +112,7 @@ python scripts/serve.py
 ## 内容结构
 
 - `content/posts/`：Markdown 文章源文件
+- `content/articles.md`：文章标题、日期、Tag、摘要和顺序表
 - `content/posts/images/`：文章原始图片
 - `content/videos.md`：Bilibili 视频清单
 - `assets/post-images/`：生成后的哈希图片缓存

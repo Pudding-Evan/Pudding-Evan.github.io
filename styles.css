@@ -521,8 +521,8 @@ h1 {
   white-space: nowrap;
 }
 
-.book-spine:first-child h3,
-.book-spine:first-child .book-date {
+.book-spine-red h3,
+.book-spine-red .book-date {
   color: #fff1cf;
   text-shadow:
     0 1px 0 rgba(35, 22, 24, 0.88),
@@ -542,6 +542,43 @@ h1 {
   display: none;
 }
 
+.article-browser {
+  padding-bottom: 92px;
+}
+
+.article-browser .note-list {
+  padding-bottom: 0;
+}
+
+.tag-filter {
+  display: flex;
+  max-width: 1020px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 auto 24px;
+}
+
+.tag-filter a {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 13px;
+  border: 2px solid rgba(188, 152, 120, 0.76);
+  color: var(--blue);
+  background: rgba(255, 250, 241, 0.82);
+  box-shadow: 4px 4px 0 rgba(132, 98, 68, 0.08);
+  font-family: var(--pixel);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tag-filter a[aria-pressed="true"] {
+  border-color: var(--green);
+  color: var(--paper);
+  background: var(--green);
+}
+
 .note-list {
   display: grid;
   max-width: 1020px;
@@ -554,12 +591,12 @@ h1 {
 .note-row {
   position: relative;
   display: grid;
-  min-height: 164px;
+  min-height: 118px;
   grid-template-columns: 150px minmax(0, 1fr);
   align-items: center;
   gap: 22px;
   overflow: hidden;
-  padding: 25px 30px 25px 34px;
+  padding: 18px 28px;
   border: 2px solid #c9ad8f;
   background:
     linear-gradient(135deg, rgba(119, 143, 106, 0.12) 0 14px, transparent 14px) top left / 52px 52px no-repeat,
@@ -593,18 +630,6 @@ h1 {
   margin-right: 8px;
   color: var(--yellow);
   content: "◆";
-}
-
-.note-row::before {
-  position: absolute;
-  top: 16px;
-  bottom: 16px;
-  left: 16px;
-  width: 7px;
-  content: "";
-  background:
-    linear-gradient(var(--orange) 0 18%, transparent 18% 28%, var(--line-strong) 28% 72%, transparent 72% 82%, var(--green) 82% 100%);
-  box-shadow: 3px 0 0 rgba(255, 250, 241, 0.85);
 }
 
 .note-row::after {
@@ -641,6 +666,12 @@ h1 {
   margin-bottom: 0;
   color: var(--muted);
   font-size: 16px;
+}
+
+.archive-empty {
+  max-width: 1020px;
+  margin: 22px auto 0;
+  color: var(--muted);
 }
 
 .switch-player-list {
@@ -1114,7 +1145,7 @@ h1 {
     min-height: 0;
     grid-template-columns: 1fr;
     gap: 12px;
-    padding: 24px 20px 22px 25px;
+    padding: 18px 18px;
   }
 
   .note-row .archive-date {
@@ -1122,13 +1153,6 @@ h1 {
     min-height: 0;
     padding: 5px 8px;
     font-size: 12px;
-  }
-
-  .note-row::before {
-    top: 14px;
-    bottom: 14px;
-    left: 12px;
-    width: 6px;
   }
 
   .note-row::after {
