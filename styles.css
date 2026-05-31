@@ -914,7 +914,9 @@ h1 {
 
 .article h1 {
   margin-bottom: 18px;
+  font-family: var(--body);
   font-size: clamp(35px, 5vw, 56px);
+  letter-spacing: normal;
 }
 
 .article-lead {
