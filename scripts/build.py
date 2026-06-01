@@ -697,7 +697,7 @@ def videos_page(videos: list[Video]) -> str:
   <body>
     <header class="site-header"><nav class="nav site-shell" aria-label="主导航"><a class="brand" href="index.html"><span class="brand-mark">E</span>楽園 <span class="brand-sub">// ELYSIUM</span></a><div class="nav-links"><a href="articles.html">NOTE</a><a href="videos.html" aria-current="page">VEDIO</a><a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a></div></nav></header>
     <main class="site-shell">
-      <section class="page-intro"><p class="eyebrow">02 / Vedio</p><h1 class="pixel-title">Vedio</h1><p>视频托管在 Bilibili，并直接嵌入本站播放。以后只需要维护 <code>content/videos.md</code> 里的 BV 号、标题和简介。</p></section>
+      <section class="page-intro"><p class="eyebrow">02 / Vedio</p><h1 class="pixel-title">Vedio</h1></section>
       <section class="switch-player-list archive-list" aria-label="视频列表">
 {body}
       </section>
