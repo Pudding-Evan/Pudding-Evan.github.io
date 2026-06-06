@@ -1,0 +1,15 @@
+{
+  "name": "mynoteweb",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync-static": "node scripts/sync-static.mjs",
+    "dev": "npm run sync-static && node scripts/run-astro.mjs dev",
+    "build": "npm run sync-static && node scripts/run-astro.mjs build",
+    "preview": "node scripts/run-astro.mjs preview"
+  },
+  "dependencies": {
+    "astro": "^6.4.4"
+  }
+}

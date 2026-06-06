@@ -1,0 +1,39 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+import { getVideos } from "../lib/content";
+
+const videos = getVideos();
+---
+
+<SiteLayout title="Video" description="Elysium video records." current="video">
+  <main class="site-shell">
+    <section class="page-intro">
+      <p class="eyebrow">02 / Video</p>
+      <h1 class="pixel-title">Video</h1>
+    </section>
+    <section class="switch-player-list archive-list" aria-label="视频列表">
+      {
+        videos.length ? (
+          videos.map((video) => (
+            <article class="switch-player" id={video.elementId}>
+              <div class="switch-player-body">
+                <div class="switch-player-copy"><h3>{video.title}</h3></div>
+                <div class="switch-screen">
+                  <iframe
+                    src={video.embedUrl}
+                    title={video.title}
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    allowfullscreen
+                  />
+                </div>
+              </div>
+            </article>
+          ))
+        ) : (
+          <p class="empty-state">暂时还没有视频。</p>
+        )
+      }
+    </section>
+  </main>
+</SiteLayout>

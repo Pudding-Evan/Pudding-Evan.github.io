@@ -1,0 +1,26 @@
+---
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { displayDate, getAllArticles, tagFilterValue } from "../../lib/content";
+
+export function getStaticPaths() {
+  return getAllArticles().map((post) => ({
+    params: { slug: post.slug },
+    props: { post }
+  }));
+}
+
+const { post } = Astro.props;
+const Content = post.Content;
+---
+
+<SiteLayout title={post.title} description={post.summary} current="note" prefix="../">
+  <main class="article site-shell">
+    <a class="text-link article-back" href="../articles.html">BACK TO ARTICLES</a>
+    <div class="meta">
+      <a class="meta-tag" href={`../articles.html?tag=${tagFilterValue(post.tag)}`}>{post.tag}</a>
+      <span>{displayDate(post.date)}</span>
+      <span>{post.readMinutes} MIN READ</span>
+    </div>
+    <Content />
+  </main>
+</SiteLayout>

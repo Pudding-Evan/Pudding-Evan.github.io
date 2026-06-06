@@ -1,77 +1,12 @@
 const siteScript = document.currentScript;
 
-const SIDE_DECOR_ITEMS = [
-  { side: "left", kind: "chest", x: 38, y: 8, label: "宝箱" },
-  { side: "left", kind: "stone", x: 78, y: 18, label: "小石头" },
-  { side: "left", kind: "key", x: 24, y: 31, label: "钥匙" },
-  { side: "left", kind: "coin", x: 68, y: 45, label: "金币" },
-  { side: "left", kind: "potion", x: 42, y: 61, label: "药水" },
-  { side: "left", kind: "stone small", x: 18, y: 73, label: "碎石" },
-  { side: "left", kind: "spark", x: 80, y: 84, label: "星光" },
-  { side: "right", kind: "key", x: 58, y: 10, label: "钥匙" },
-  { side: "right", kind: "stone small", x: 22, y: 24, label: "碎石" },
-  { side: "right", kind: "chest", x: 30, y: 38, label: "宝箱" },
-  { side: "right", kind: "spark", x: 74, y: 51, label: "星光" },
-  { side: "right", kind: "potion", x: 52, y: 66, label: "药水" },
-  { side: "right", kind: "coin", x: 20, y: 79, label: "金币" },
-  { side: "right", kind: "stone", x: 72, y: 88, label: "小石头" },
-];
-
-const SIDE_DECOR_LINKS = {
-  left: [
-    { x: 48, y: 15, h: 64, rotate: 32 },
-    { x: 26, y: 39, h: 58, rotate: -24 },
-    { x: 58, y: 53, h: 56, rotate: 18 },
-    { x: 34, y: 71, h: 50, rotate: 66 },
-  ],
-  right: [
-    { x: 52, y: 17, h: 62, rotate: -30 },
-    { x: 34, y: 34, h: 52, rotate: 24 },
-    { x: 58, y: 58, h: 54, rotate: -18 },
-    { x: 38, y: 77, h: 48, rotate: -58 },
-  ],
-};
-
-function buildSideDecor() {
-  if (document.querySelector(".side-quest")) return;
-
-  ["left", "right"].forEach((side) => {
-    const rail = document.createElement("div");
-    rail.className = `side-quest side-quest-${side}`;
-    rail.setAttribute("aria-hidden", "true");
-
-    SIDE_DECOR_LINKS[side].forEach((link) => {
-      const line = document.createElement("span");
-      line.className = "decor-link";
-      line.style.setProperty("--x", `${link.x}%`);
-      line.style.setProperty("--y", `${link.y}%`);
-      line.style.setProperty("--h", `${link.h}px`);
-      line.style.setProperty("--r", `${link.rotate}deg`);
-      rail.append(line);
-    });
-
-    SIDE_DECOR_ITEMS.filter((item) => item.side === side).forEach((item) => {
-      const node = document.createElement("span");
-      node.className = `decor-item decor-${item.kind}`;
-      node.style.setProperty("--x", `${item.x}%`);
-      node.style.setProperty("--y", `${item.y}%`);
-      node.setAttribute("aria-label", item.label);
-      rail.append(node);
-    });
-
-    document.body.prepend(rail);
-  });
-}
-
-buildSideDecor();
-
 function normalizeArticleTag(tag) {
   return (tag || "all").trim().toLowerCase();
 }
 
 function articleRowTags(row) {
   return (row.dataset.tags || row.dataset.tag || "")
-    .split(/[\s,，|/]+/)
+    .split(/[\s,，|\/]+/)
     .map(normalizeArticleTag)
     .filter(Boolean);
 }
@@ -138,6 +73,88 @@ function setupArticleTagFilter() {
 }
 
 setupArticleTagFilter();
+
+function setupHomeScrollReveal() {
+  const sections = Array.from(document.querySelectorAll("[data-home-section]"));
+  if (!sections.length) return;
+
+  document.documentElement.classList.add("has-scroll-reveal");
+
+  if (!("IntersectionObserver" in window)) {
+    sections.forEach((section) => section.classList.add("is-visible"));
+    return;
+  }
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+        }
+      });
+    },
+    {
+      rootMargin: "-12% 0px -38%",
+      threshold: 0.18,
+    },
+  );
+
+  sections[0]?.classList.add("is-visible");
+  sections.forEach((section) => observer.observe(section));
+}
+
+setupHomeScrollReveal();
+
+function setupHomeWheelSnap() {
+  const panels = Array.from(document.querySelectorAll("[data-home-section]"));
+  if (panels.length < 2) return;
+
+  const desktop = window.matchMedia("(min-width: 861px)");
+  let isSnapping = false;
+
+  function snapTops() {
+    const header = document.querySelector(".site-header");
+    const headerHeight = header?.offsetHeight || 0;
+    const viewportHeight = Math.max(1, window.innerHeight - headerHeight);
+    return panels.map((panel, index) => {
+      if (index === 0) return 0;
+      const centerOffset = Math.max(0, (viewportHeight - panel.offsetHeight) / 2);
+      return Math.max(0, panel.offsetTop - headerHeight - centerOffset);
+    });
+  }
+
+  function nearestPanelIndex(tops) {
+    return tops.reduce((nearest, top, index) => {
+      return Math.abs(top - window.scrollY) < Math.abs(tops[nearest] - window.scrollY)
+        ? index
+        : nearest;
+    }, 0);
+  }
+
+  window.addEventListener(
+    "wheel",
+    (event) => {
+      if (!desktop.matches || isSnapping || Math.abs(event.deltaY) < 18) {
+        return;
+      }
+
+      const tops = snapTops();
+      const current = nearestPanelIndex(tops);
+      const next = Math.max(0, Math.min(panels.length - 1, current + (event.deltaY > 0 ? 1 : -1)));
+      if (next === current) return;
+
+      event.preventDefault();
+      isSnapping = true;
+      window.scrollTo({ top: tops[next], behavior: "smooth" });
+      window.setTimeout(() => {
+        isSnapping = false;
+      }, 760);
+    },
+    { passive: false },
+  );
+}
+
+setupHomeWheelSnap();
 
 if ("serviceWorker" in navigator && /^https?:$/.test(window.location.protocol)) {
   window.addEventListener("load", () => {

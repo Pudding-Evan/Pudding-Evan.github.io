@@ -1,0 +1,61 @@
+---
+interface Props {
+  title?: string;
+  description?: string;
+  current?: "note" | "video" | "";
+  prefix?: string;
+  htmlClass?: string;
+  bodyClass?: string;
+}
+
+const {
+  title = "Elysium",
+  description = "Elysium personal notes and videos.",
+  current = "",
+  prefix = "",
+  htmlClass = "",
+  bodyClass = ""
+} = Astro.props;
+
+const pageTitle = title === "Elysium" ? "Elysium" : `${title} | Elysium`;
+---
+
+<!doctype html>
+<html class={htmlClass || undefined} lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content={description}>
+    <title>{pageTitle}</title>
+    <link rel="stylesheet" href={`${prefix}styles.css`}>
+    <script src={`${prefix}site.js`} defer></script>
+  </head>
+  <body class={bodyClass || undefined}>
+    <header class="site-header">
+      <nav class="nav site-shell" aria-label="主导航">
+        <a class="brand" href={`${prefix}index.html`} aria-label="Elysium 首页">
+          <span class="brand-mark" aria-hidden="true">E</span>
+          <span class="brand-word" aria-hidden="true">ELYSIUM</span>
+        </a>
+        <div class="nav-links">
+          <a href={`${prefix}articles.html`} aria-current={current === "note" ? "page" : undefined}>NOTE</a>
+          <a href={`${prefix}videos.html`} aria-current={current === "video" ? "page" : undefined}>VIDEO</a>
+          <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a>
+        </div>
+      </nav>
+    </header>
+
+    <slot />
+
+    <footer class="site-footer">
+      <div class="footer-inner site-shell">
+        <span>© 2026 Elysium</span>
+        <div class="footer-links">
+          <a href={`${prefix}articles.html`}>NOTE</a>
+          <a href={`${prefix}videos.html`}>VIDEO</a>
+          <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

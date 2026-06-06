@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .codex-browser-profile/
+.astro/
+node_modules/
+dist/
+public/

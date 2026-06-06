@@ -22,19 +22,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/cache@v4
+      - uses: actions/setup-node@v4
         with:
-          path: assets/post-images
-          key: article-images-${{ hashFiles('content/posts/**') }}
-          restore-keys: article-images-
-      - name: Build Markdown articles
-        run: python scripts/build.py
-      - name: Collect static site
-        run: |
-          mkdir dist
-          cp -R assets posts dist/
-          cp .nojekyll 404.html articles.html index.html site.js styles.css sw.js videos.html dist/
+          node-version: 22
+          cache: npm
+      - uses: actions/configure-pages@v5
+      - name: Install dependencies
+        run: npm ci
+      - name: Build Astro site
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
