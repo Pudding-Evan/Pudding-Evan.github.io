@@ -103,7 +103,7 @@ FPredictionKeyDelegates::BroadcastRejectedDelegate(PredictionKey);
 FPredictionKeyDelegates::BroadcastCaughtUpDelegate(PredictionKey);
 ```
 
-客户端收到 CatchUp 后，清理本地预测副作用，保留服务端权威复制结果。可以把两条消息分开理解：`ClientActivateAbilitySucceed` 是服务端说“这次激活我接受了”，`ReplicatedPredictionKeyMap` 是服务端说“带这个 Key 的权威结果已经复制到了，可以对账了”。前者是许可，后者是追平。
+客户端收到 CatchUp 后，清理本地预测副作用，保留服务端权威复制结果。可以把两条消息分开理解：`ClientActivateAbilitySucceed` 是服务端说“这次激活我接受了”，`ReplicatedPredictionKeyMap` 是服务端说“带这个 Key 的权威结果已经复制到了。”
 
 # GameplayEffect 如何预测
 
@@ -115,7 +115,11 @@ return IsOwnerActorAuthoritative() || PredictionKey.IsValidForMorePrediction();
 
 服务端当然有权应用 GE。客户端没有权威，但如果当前持有有效 PredictionKey，就可以预测应用 GE。没有权威也没有 PredictionKey 时，客户端应用 GE 会被拒绝。
 
-`ApplyGameplayEffectSpecToSelf` 中还有几条重要规则。第一，Periodic GameplayEffect 不能预测。周期执行依赖服务端时间和重复触发，客户端提前模拟很容易产生次数、时间和回滚上的复杂问题，所以源码里会直接拒绝预测 Periodic GE。第二，客户端预测 Instant GE 时，会把它临时当作 Infinite GE 放进 ActiveGameplayEffects：
+`ApplyGameplayEffectSpecToSelf` 中还有几条重要规则。
+
+第一，Periodic GameplayEffect 不能预测。周期执行依赖服务端时间和重复触发，客户端提前模拟很容易产生次数、时间和回滚上的复杂问题，所以源码里会直接拒绝预测 Periodic GE。
+
+第二，客户端预测 Instant GE 时，会把它临时当作 Infinite GE 放进 ActiveGameplayEffects：
 
 ```cpp
 bool bTreatAsInfiniteDuration =

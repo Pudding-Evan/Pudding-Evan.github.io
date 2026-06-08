@@ -45,6 +45,10 @@ html {
     scroll-padding-top: 88px;
     scroll-snap-type: y mandatory;
   }
+
+  html.home-document.is-home-free-scroll {
+    scroll-snap-type: none;
+  }
 }
 
 body {

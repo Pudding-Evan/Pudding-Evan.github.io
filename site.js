@@ -110,7 +110,9 @@ function setupHomeWheelSnap() {
   if (panels.length < 2) return;
 
   const desktop = window.matchMedia("(min-width: 861px)");
+  const root = document.documentElement;
   let isSnapping = false;
+  const freeScrollThreshold = 32;
 
   function snapTops() {
     const header = document.querySelector(".site-header");
@@ -123,6 +125,22 @@ function setupHomeWheelSnap() {
     });
   }
 
+  function lastSnapTop(tops = snapTops()) {
+    return tops[tops.length - 1] || 0;
+  }
+
+  function updateFreeScroll(tops) {
+    if (!desktop.matches) {
+      root.classList.remove("is-home-free-scroll");
+      return;
+    }
+
+    root.classList.toggle(
+      "is-home-free-scroll",
+      window.scrollY > lastSnapTop(tops) + freeScrollThreshold,
+    );
+  }
+
   function nearestPanelIndex(tops) {
     return tops.reduce((nearest, top, index) => {
       return Math.abs(top - window.scrollY) < Math.abs(tops[nearest] - window.scrollY)
@@ -130,6 +148,10 @@ function setupHomeWheelSnap() {
         : nearest;
     }, 0);
   }
+
+  window.addEventListener("scroll", () => updateFreeScroll(), { passive: true });
+  desktop.addEventListener?.("change", () => updateFreeScroll());
+  updateFreeScroll();
 
   window.addEventListener(
     "wheel",
@@ -139,15 +161,27 @@ function setupHomeWheelSnap() {
       }
 
       const tops = snapTops();
+      const lastTop = lastSnapTop(tops);
+      if (window.scrollY > lastTop + freeScrollThreshold) {
+        return;
+      }
+
       const current = nearestPanelIndex(tops);
+      if (current === panels.length - 1 && event.deltaY > 0) {
+        root.classList.add("is-home-free-scroll");
+        return;
+      }
+
       const next = Math.max(0, Math.min(panels.length - 1, current + (event.deltaY > 0 ? 1 : -1)));
       if (next === current) return;
 
       event.preventDefault();
       isSnapping = true;
+      root.classList.remove("is-home-free-scroll");
       window.scrollTo({ top: tops[next], behavior: "smooth" });
       window.setTimeout(() => {
         isSnapping = false;
+        updateFreeScroll();
       }, 760);
     },
     { passive: false },

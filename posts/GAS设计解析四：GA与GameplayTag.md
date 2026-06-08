@@ -1,8 +1,6 @@
 # Gas设计解析四：GA与GameplayTag
 
-前几篇已经把 ASC、Attribute、GameplayEffect 讲完了。到这里，GAS 里还缺一个真正承载“技能业务流程”的对象，也就是 GameplayAbility。前三篇讲的是系统里有哪些状态、这些状态如何被效果修改，这一篇讲的就是：一次技能如何被授予、被检查、被激活、被提交，并通过 Tag 和 GE 影响整个 ASC。
-
-如果说 ASC 是技能系统的中枢，Attribute 是被修改的数据，GameplayEffect 是对 ASC 产生影响的数据化效果，那么 GameplayAbility 就是“什么时候检查、什么时候启动、什么时候播放动作、什么时候提交消耗、什么时候应用 GE、什么时候等待输入、什么时候结束”的业务载体。例如，一个火球术通常是一段 Ability 流程：检查蓝量和冷却，播放施法动画，等待命中或目标数据，然后对目标应用伤害 GE，再应用自身冷却 GE，最后结束 Ability。GE 只是这条流程中被应用出去的效果。
+GameplayAbility是真正承载“技能业务流程”的对象。如果说 ASC 是技能系统的中枢，Attribute 是被修改的数据，GameplayEffect 是对 ASC 产生影响的数据化效果，那么 GameplayAbility 就是“什么时候检查、什么时候启动、什么时候播放动作、什么时候提交消耗、什么时候应用 GE、什么时候等待输入、什么时候结束”的业务载体。例如，一个火球术通常是一段 Ability 流程：检查蓝量和冷却，播放施法动画，等待命中或目标数据，然后对目标应用伤害 GE，再应用自身冷却 GE，最后结束 Ability。GE 只是这条流程中被应用出去的效果。
 
 GameplayTag 在这套技能流程里大量使用，不管是GA、GE都绕不开它。GAS 的很多判断不会写成 `bIsStunned`、`bIsDead`、`bCanCastFireball` 这类布尔变量，一定是通过 `State.Stunned`、`State.Dead`、`Ability.Fireball`、`Cooldown.Fireball` 这样的层级标签表达。Tag 的价值在于，它把许多分散的状态和条件变成一套可组合、可查询、可配置的树结构状态，非常强大灵活。
 
@@ -26,7 +24,7 @@ Epic 官方文档对 GameplayAbility 的定义是：`UGameplayAbility` 定义一
 
 # Ability 如何进入 ASC
 
-Ability 需要先被授予给 ASC，进入 `ActivatableAbilities` 之后，才有资格被激活。源码入口是：
+Ability 需要先被授予给 ASC，进入 `ActivatableAbilities` 之后，才有资格被激活。
 
 ```cpp
 FGameplayAbilitySpecHandle UAbilitySystemComponent::GiveAbility(const FGameplayAbilitySpec& Spec)
@@ -61,9 +59,8 @@ FGameplayAbilitySpecHandle UAbilitySystemComponent::GiveAbility(const FGameplayA
 Ability 的激活通常从 ASC 开始：
 
 ```cpp
-bool UAbilitySystemComponent::TryActivateAbility(
-	FGameplayAbilitySpecHandle AbilityToActivate,
-	bool bAllowRemoteActivation)
+bool UAbilitySystemComponent::TryActivateAbility(FGameplayAbilitySpecHandle AbilityToActivate,
+                                                 bool bAllowRemoteActivation)
 ```
 
 `TryActivateAbility` 会先找到 Spec，确认 OwnerActor 和 AvatarActor 有效，确认当前不是 SimulatedProxy，然后根据 Ability 的网络策略决定是在本地执行、请求服务端执行，还是直接失败。通过这些初步判断之后，才进入 `InternalTryActivateAbility`。
@@ -80,7 +77,11 @@ bool UAbilitySystemComponent::TryActivateAbility(
  */
 ```
 
-展开来看，它会做几件事。先根据 Handle 找到 AbilitySpec，再检查 ActorInfo、网络角色和 Ability 的 NetExecutionPolicy。然后选择 Ability 实例：如果是 `InstancedPerActor`，使用已有实例；如果是 `InstancedPerExecution`，激活时创建新实例；如果是 `NonInstanced`，则直接使用 CDO。接着调用 `CanActivateAbility` 做条件检查。如果检查通过，才会创建 `FGameplayAbilityActivationInfo`，处理预测窗口，最后调用 `CallActivateAbility`。
+展开来看，它会做几件事。
+
+1. 先根据 Handle 找到 `AbilitySpec`，再检查 `ActorInfo`、网络角色和 Ability 的 `NetExecutionPolicy`。
+2. 然后选择 Ability 实例：如果是 `InstancedPerActor`，使用已有实例；如果是 `InstancedPerExecution`，激活时创建新实例；如果是 `NonInstanced`，则直接使用 CDO。
+3. 接着调用 `CanActivateAbility` 做条件检查。如果检查通过，才会创建 `FGameplayAbilityActivationInfo`，处理预测窗口，最后调用 `CallActivateAbility`。
 
 `CallActivateAbility` 本身很短：
 
@@ -180,13 +181,11 @@ ApplyCost(...);
 
 # Ability 实例策略
 
-Ability 还有一个容易被忽略的策略：`InstancingPolicy`。
+* `NonInstanced` 表示不创建实例，执行时使用 CDO。它开销低，但不能保存每次激活的状态，也不适合依赖异步任务和实例变量的复杂技能。
 
-`NonInstanced` 表示不创建实例，执行时使用 CDO。它开销低，但不能保存每次激活的状态，也不适合依赖异步任务和实例变量的复杂技能。
+* `InstancedPerActor` 表示每个 ASC 拥有一个 Ability 实例。这个实例可以保存状态，可以绑定委托，可以运行异步任务。大多数需要蓝图逻辑、AbilityTask 或持续状态的技能都会选择它。如果它已经激活，再次激活要看 `bRetriggerInstancedAbility` 是否允许重触发。
 
-`InstancedPerActor` 表示每个 ASC 拥有一个 Ability 实例。这个实例可以保存状态，可以绑定委托，可以运行异步任务。大多数需要蓝图逻辑、AbilityTask 或持续状态的技能都会选择它。如果它已经激活，再次激活要看 `bRetriggerInstancedAbility` 是否允许重触发。
-
-`InstancedPerExecution` 表示每次激活创建一个新实例。它适合每次激活之间需要完全隔离状态的能力，但在预测和复制上约束更多。
+* `InstancedPerExecution` 表示每次激活创建一个新实例。它适合每次激活之间需要完全隔离状态的能力，但在预测和复制上约束更多。
 
 # AbilityTask
 
