@@ -127,8 +127,8 @@ FGameplayModifierEvaluatedData EvalData(
 
 所以同样是 `Health +20`：
 
-- Instant GE 更像把账本改成 80。
-- Duration/Infinite GE 更像在账本旁边挂一个临时加成，当前显示 80，效果结束后回到原值。
+- Instant GE 直接把BaseValue 修改成 80。
+- Duration/Infinite GE 则不直接改动BaseValue，而是提供一个加成，当前显示 80，效果结束后回到原值。
 
 这也是 BaseValue 和 CurrentValue 分开的意义。
 
@@ -307,8 +307,6 @@ SetByCaller 适合这些情况：
 - 技能外部已经算好伤害，只需要交给 GE 应用。
 - 同一个 GE 资产被多个 Ability 复用，每次传入不同数值。
 
-注意，如果 GE 中配置了 SetByCaller，但应用前没有给 Spec 写入对应值，源码会按默认值返回，并根据参数决定是否打印警告。尤其是 Division 这类操作，缺省值如果是 0，日志和结果都会很难看。
-
 # Execution
 
 Execution 指 `UGameplayEffectExecutionCalculation`。它和 MMC 最大的不同是：MMC 返回一个 float，Execution 可以输出多个属性修改。
@@ -396,15 +394,7 @@ Execution 是能力最强、也最灵活的一档。它可以读取更多上下�
 
 至于 GE 的持续类型，则是另一个维度：一次性结算选 Instant，临时状态选 Duration 或 Infinite，周期跳伤害或回血选 Periodic。
 
-# 常见误区
 
-Modifier 支持预测，不等于所有 Modifier 结果都一定正确。预测依赖客户端拥有足够一致的输入。AttributeBased 和 MMC 如果读取了客户端没有的状态，最后仍然要等服务端修正。
-
-Execution 很强，不等于所有伤害都要用 Execution。简单的固定治疗、固定消耗、简单 Buff，用 Modifier 更清楚。
-
-SetByCaller 很灵活，不等于可以把所有公式都提前算好塞进去。它适合传入运行时变量，不适合把 GE 变成一个没有语义的“float 搬运工”。
-
-Stack 的 Multiply 默认不是连乘。这个点值得单独记住。数值异常时先看 `ComputeStackedModifierMagnitude` 和多个 Modifier 的计算公式，不要先怀疑宇宙。
 
 # 本章结论
 

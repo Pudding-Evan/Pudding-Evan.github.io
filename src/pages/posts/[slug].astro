@@ -11,16 +11,33 @@ export function getStaticPaths() {
 
 const { post } = Astro.props;
 const Content = post.Content;
+const tocHeadings = post.headings;
 ---
 
 <SiteLayout title={post.title} description={post.summary} current="note" prefix="../">
-  <main class="article site-shell">
+  <main class="article-page site-shell">
     <a class="text-link article-back" href="../articles.html">BACK TO ARTICLES</a>
-    <div class="meta">
-      <a class="meta-tag" href={`../articles.html?tag=${tagFilterValue(post.tag)}`}>{post.tag}</a>
-      <span>{displayDate(post.date)}</span>
-      <span>{post.readMinutes} MIN READ</span>
+    <div class="article-shell">
+      <article class="article">
+        <div class="meta">
+          <a class="meta-tag" href={`../articles.html?tag=${tagFilterValue(post.tag)}`}>{post.tag}</a>
+          <span>{displayDate(post.date)}</span>
+          <span>{post.readMinutes} MIN READ</span>
+        </div>
+        <Content />
+      </article>
+      {tocHeadings.length > 0 && (
+        <aside class="article-toc" aria-label="文章目录">
+          <h2 class="article-toc-title">CONTENTS</h2>
+          <nav>
+            {tocHeadings.map((heading) => (
+              <a class={`article-toc-link depth-${heading.depth}`} href={`#${heading.slug}`}>
+                {heading.text}
+              </a>
+            ))}
+          </nav>
+        </aside>
+      )}
     </div>
-    <Content />
   </main>
 </SiteLayout>

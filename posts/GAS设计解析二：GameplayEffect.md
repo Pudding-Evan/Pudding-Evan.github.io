@@ -142,11 +142,7 @@ ExecutionCalculation 是 GE 修改 ASC 最强的方式之一。
 
 它通过 `UGameplayEffectExecutionCalculation::Execute_Implementation` 执行，可以读取捕获到的 Source/Target Attribute、Tag、EffectContext、SetByCaller 数据，并输出多个 `FGameplayModifierEvaluatedData`。
 
-也就是说，它可以一次修改多个 Attribute，可以写复杂伤害公式，可以做护盾优先扣减、护甲减伤、生命偷取、暴击修正等逻辑。
-
-代价也很明确：它不能被预测。
-
-原因不难理解。ExecutionCalculation 允许项目代码执行任意逻辑，客户端很难保证自己和服务端拥有完全一致的输入、时序和结果。GAS 在这里选择让服务端裁决。客户端想提前表现，可以播放预测 Cue 或本地表现，但最终属性结果要等服务端。
+也就是说，它可以一次修改多个 Attribute，可以写复杂伤害公式，可以做护盾优先扣减、护甲减伤、生命偷取、暴击修正等逻辑。但它不能被预测。因为ExecutionCalculation 允许项目代码执行任意逻辑，客户端很难保证自己和服务端拥有完全一致的输入、时序和结果。GAS 在这里选择让服务端裁决。客户端想提前表现，可以播放预测 Cue 或本地表现，但最终属性结果要等服务端。
 
 # 如何授予新的 Ability
 

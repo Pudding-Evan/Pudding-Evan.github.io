@@ -5,6 +5,13 @@ type MarkdownModule = {
   frontmatter?: Record<string, unknown>;
   Content: AstroComponentFactory;
   rawContent?: () => string;
+  getHeadings?: () => MarkdownHeading[];
+};
+
+export type MarkdownHeading = {
+  depth: number;
+  slug: string;
+  text: string;
 };
 
 export type Article = {
@@ -16,6 +23,7 @@ export type Article = {
   summary: string;
   order?: number;
   readMinutes: number;
+  headings: MarkdownHeading[];
   Content: AstroComponentFactory;
 };
 
@@ -160,6 +168,7 @@ export function getAllArticles(): Article[] {
       const summary = row.summary || textValue(frontmatter.summary) || firstParagraph(raw);
       const orderValue = row["顺序"] || row.order || textValue(frontmatter.order);
       const order = /^\d+$/.test(orderValue) ? Number(orderValue) : undefined;
+      const headings = (mod.getHeadings?.() ?? []).filter((heading) => heading.depth >= 2 && heading.depth <= 3);
 
       return {
         slug: slugify(textValue(frontmatter.slug) || stem),
@@ -170,6 +179,7 @@ export function getAllArticles(): Article[] {
         summary,
         order,
         readMinutes: estimateReadMinutes(raw),
+        headings,
         Content: mod.Content
       };
     })
