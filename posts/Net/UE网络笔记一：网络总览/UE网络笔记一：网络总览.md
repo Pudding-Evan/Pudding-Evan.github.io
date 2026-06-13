@@ -2,19 +2,19 @@
 
 这篇笔记内容并不会过多涉及到实际工程中的用法，也不会提到UE最新的网络复制系统Iris，更多希望解析以Replicate和RPC的为模型的UE网络概览，理清数据处理和流向。
 
-# 前置知识
+## 前置知识
 
 一个程序如果想和另一台机器上的程序通信，就需要通过Socekt进行发送和接收数据。网络通信一般解决三个问题：发给哪个机器、发给哪个程序，用什么方式发。Socket就是程序进行收发数据的通信端点，常见的TCP和UDP，就是通过Socket使用的。UE最底层使用的UDP，作为传输层协议，它的通信方式更像是，把数据往对应IP地址的端口一塞，它的核心特征是无连接、不保证送达，不保证顺序，也不自动重传，换来的是其开销和延迟的便利。UE会在这个基础上构建自己所需的可靠协议。关于TCP和UDP的内容，上过网络课的应该都比较了解，不再赘述了。
 
 如果游戏引擎给予UDP做网络同步，势必要在这此基础上封装一层自己的机制，例如、加上数据包序号、给某些需要保证到达的消息增加确认机制、对丢包内容选择性重发、控制发包频率、包括在网络波动的情况下调整发送的策略，决定同步的对象等等。因为UDP只是一个很快的传输层工具，需要补全大量面对游戏场景的机制。
 
-# 概念说明
+## 概念说明
 
 UE网络运行的中心类可以分两条线理解。
 
-![image](./Image/net_1/image.png)
+![image](./images/image.png)
 
-## `NetDriver`
+### `NetDriver`
 
 `UWorld`是游戏世界的顶层运行容器了，无论是服务器还是客户端，都有自己的world。从网络的角度看，地图里的`Actor`/`Level`/`GameMode`/`GameState`等等，则是需要进行同步的对象，因此`UWorld`可以认为是提供网络复制发生的上下文。而`NetDriver`就绑定在`World`中。
 
@@ -51,7 +51,7 @@ bool UWorld::Listen( FURL& InURL )
 	TObjectPtr<class UNetConnection> ServerConnection;
 ```
 
-## `NetConnection`
+### `NetConnection`
 
 `NetConnection`的生命周期主要由`NetDriver`和连接状态主导。
 
@@ -63,7 +63,7 @@ bool UWorld::Listen( FURL& InURL )
 
 `NetConnection`管理连接基本的事情。例如Packet收发、ACK/丢包/重传、可靠/不可靠数据处理、Channel集合等。
 
-## `Channel`
+### `Channel`
 
 `Channel`应该理解为建立`NetConnection`上的逻辑数据通道。既然已经建立了一条网络连接，其收发到的数据应该被处理并发送给其他消费数据的对象方，而承载这些分发数据流的载体就是`Channel`。
 
@@ -91,7 +91,7 @@ Client_2 也能看到 Actor_A：
 
 也就是说，一个服务器 Actor 可以对应多个 `ActorChannel`。每个 `ActorChannel` 属于不同的 `Connection`。
 
-## `LocalPlayer/ServerConnection`
+### `LocalPlayer/ServerConnection`
 
 见上图，为什么这里要单独拿出来提这两个呢，因为这里是一个比较容易混淆的地方。
 
@@ -124,13 +124,13 @@ PlayerController->Player = NetConnection
 
 `UNetConnection` 一方面是网络连接对象，另一方面在服务器远端玩家场景下，又可以作为 `PlayerController` 的 `Player` 来源。
 
-# 数据收包流程
+## 数据收包流程
 
 一条完整的收包主线如下，如果调试过RPC函数，这个堆栈应该会非常熟悉，接下来这一节内容会结合源码，拆解收包流程。
 
-![image 1](./Image/net_1/image 1.png)
+![image 1](./images/image 1.png)
 
-## `UIpNetDriver::TickDispatch`
+### `UIpNetDriver::TickDispatch`
 
 IpNetDriver作为NetDriver的子类，是实际业务的承载者。`UIpNetDriver::TickDispatch` 是传统 UDP 路径的每帧收包入口
 
@@ -201,7 +201,7 @@ void UIpNetDriver::TickDispatch(float DeltaTime)
 - 找不到连接时才会进入 `ProcessConnectionlessPacket`，处理握手、challenge、无连接控制包。
 - 只有拿到 `UNetConnection`，普通 packet 才进入 `ReceivedRawPacket`。
 
-## `UNetConnection::ReceivedRawPacket`
+### `UNetConnection::ReceivedRawPacket`
 
 Connection在这里对原始数据进行一些处理，主要交给PacketHandle进行处理，负责对握手、加密校验等等、Handel这里有可能直接消费掉这个包数据，不再往下传了。它处理完毕后的数据会进入到ReceivePacket进行下一步处理
 
@@ -235,7 +235,7 @@ void UNetConnection::ReceivedRawPacket( void* InData, int32 Count )
 }
 ```
 
-## **`ReceivedPacket::ReceivedPacket`**
+### **`ReceivedPacket::ReceivedPacket`**
 
 这一层接手的数据通过了Raw层处理，可以按UE网络协议进行解析了。
 
@@ -244,7 +244,7 @@ void UNetConnection::ReceivedRawPacket( void* InData, int32 Count )
 3. 之后，才是调用`DispatchPacket` ，把`Packet`中剩余的数据继续下发处理
 4. 最后，还会根据处理结果，记录对当前`Packet`的接受结果，等待之后发送给对端
 
-## **`ReceivedPacket::DispatchPacket`**
+### **`ReceivedPacket::DispatchPacket`**
 
 `DispatchPacket`会开始处理Packet中的Channel数据，一个Packet可以包含多个Bunch。
 
@@ -303,7 +303,7 @@ void UNetConnection::DispatchPacket(
 }
 ```
 
-## `UChannal::ReceivedRawBunch`
+### `UChannal::ReceivedRawBunch`
 
 packet 层顺序和 channel 层 reliable 顺序是两套东西。`ReceivedPacket` 处理 packet id；`ReceivedRawBunch` 会对接受的Bunch进行一些顺序处理。
 
@@ -377,7 +377,7 @@ void UChannel::ReceivedRawBunch(FInBunch& Bunch, bool& bOutSkipAck)
 - 这段逻辑的核心操作在于，Reliable Bunch 必须按 Channel 内的可靠序号严格顺序处理；非 Reliable Bunch 可以直接处理。如果当前接受到的Reliable Bunch乱序，会插入到`InRec`中 。`InRec`本质是已经收到，但暂时不能处理的Reliable Bunch队列。它缓存乱序到达的Reliable Bunch，等缺失的Reliable Bunch到达后，再按顺序释放处理。
 - 另一个问题是：什么情况下Bunch会被标记为Reliable呢？简单来说，网络层要求必须到达，且按顺序处理的Channel数据包，都会被标记为Reliable Bunch。例如Reliable的RPC，除此之外，像是连接握手、加载地图、NetGUID等控制信息、一些可靠传输的ActorChannel数据，都有可能通过Reliable Bunch发送，所以说，Reliable RPC 是 Reliable Bunch 的典型来源，但 Reliable Bunch 不只来自 RPC。
 
-## `UChannel::**ReceivedNextBunch**`
+### `UChannel::**ReceivedNextBunch**`
 
 简单来说，**`ReceivedNextBunch`** 会处理Partical Bunch的拼接，拼接完整后再交给具体的Channel。
 
@@ -407,7 +407,7 @@ bool UChannel::ReceivedNextBunch(FInBunch& Bunch, bool& bOutSkipAck)
 
 Bunch可以理解为Channel上的一段逻辑消息，一个逻辑消息可能太大，超过单次发送的允许或者是单个Bunch的大小限制，所以有时候一个大的Bunch会被拆成多个partial bunch进行发送，这也是为什么在接收端这里需把这些片段再拼接起来。而到了**`ReceivedSequencedBunch`**  这一层，它拿到的则是按顺序重组的完整Bunch，进行真正的处理逻辑。
 
-## **`UChannel::ReceivedSequencedBunch`**
+### **`UChannel::ReceivedSequencedBunch`**
 
 `ReceivedSequencedBunch` 的主线非常短
 
@@ -435,11 +435,11 @@ ReceivedBunch是一个虚函数，不同的Channel在这里处理各自的业务
 - UActorChannel：Actor创建/属性复制/RPC等
 - UVoiceChannel：语言数据
 
-# 数据发包流程
+## 数据发包流程
 
 数据发送流程可以从服务端和客户端两方视角里来看。客户端和服务器都会发包，但是它们发出的东西不完全一样，除了RPC外，服务端还承担了把自己权威Actor状态复制给各个客户端。
 
-![image 2](./Image/net_1/image 2.png)
+![image 2](./images/image 2.png)
 
 这里可以分成两个阶段，一个是收集Bunch的阶段，此帧中游戏逻辑产生的FOutBunch，通过各自`UChannel::SendBunch`，最终写入名为`SendBuffer`的缓存中，在这里等候后续发包
 
@@ -455,7 +455,7 @@ public:
 
 另一个则是发送阶段，见`UNetDriver::TickFlush`。这是每帧出站的主要入口，最终通过`FlushNet` 发包
 
-## `UNetDriver::TickFlush`
+### `UNetDriver::TickFlush`
 
 ```jsx
 void UNetDriver::TickFlush(float DeltaSeconds)
@@ -508,7 +508,7 @@ void UNetConnection::Tick(float DeltaSeconds)
 }
 ```
 
-## RPC
+### RPC
 
 RPC远程过程调用，它并不是直接调用远端函数，而是会先序列化成`FOutBunch` ，走`ActorChannel`的通道发送
 
@@ -557,7 +557,7 @@ void UNetDriver::ProcessRemoteFunctionForChannelPrivate(...)
 1. RPC参数通过`RepLayout->SendPropertiesForRPC` 序列化，写入函数标识和参数。
 2. 如果`ActorChannel` 没初始化打开，客户端一侧直接return。因为客户端不能在服务器还没有建立连接的时候就发RPC，而如果是服务器发给客户端，服务器会先强制`ReplicateActor()` ,让客户端认识这个Actor，再调用其上的RPC。
 
-## Actor复制
+### Actor复制
 
 传统的复制路径入口（这里写传统的意思就是非IRis的复制系统）是`ServerReplicateActors` 
 
@@ -645,7 +645,7 @@ int32 UNetDriver::ServerReplicateActors_ProcessPrioritizedActorsRange(...)
 
 对于服务器来说，`ActorChannel` 一定是隶属于某个Connection的。而一个Connection会关联一个客户端。也就是说，同一个服务端 Actor，如果要复制给三个客户端，就可能分别在三个 `ClientConnection` 上有三个 `ActorChannel`。
 
-## **`UActorChannel::ReplicateActor`**
+### **`UActorChannel::ReplicateActor`**
 
 在这里，服务器的Actor复制会写入`FOutBunch`
 
@@ -686,7 +686,7 @@ int64 UActorChannel::ReplicateActor()
 
 初始复制时，`SerializeNewActor` 会写入远端创建或绑定这个 Actor 所需的信息。后续属性变化由 `FObjectReplicator / FRepLayout` 写入。
 
-## **`UChannel::SendBunch`**
+### **`UChannel::SendBunch`**
 
 我们上文一直说到`FOutBunch`，这是和收包侧的`FInBunch`对应的。可以理解为携带相关Channel连接信息的数据流。
 
@@ -746,7 +746,7 @@ FPacketIdRange UChannel::SendBunch(FOutBunch* Bunch, bool Merge)
 
 简单来说：Reliable RPC 保证的是“调用这条消息到达”，属性复制追求的是“状态最终同步到位”。
 
-## 关于`SendBuffer`
+### 关于`SendBuffer`
 
 可以理解为`SendBuffer` 是 `UNetConnection` 上的出站 packet 组装缓冲区。
 
@@ -757,7 +757,7 @@ FBitWriter SendBuffer; // Queued up bits waiting to send
 
 只有等到`FlushNet`时，`SendBuffer`里面的内容才会被当成一个packet交给`LowLevelSend`。
 
-## **`UNetConnection::FlushNet`**
+### **`UNetConnection::FlushNet`**
 
 在这里是连接层提交Packet的位置，这里面对的数据已经是组装好的Packet内容了。
 
@@ -847,7 +847,7 @@ void UIpConnection::SendToRemote(uint8* DataToSend, int32 CountBits, FOutPacketT
 
 ```
 
-# 其他
+## 其他
 
 - 问题一：`TickDispatch`会通过`FPacketIterator`每帧取多少个入站packet
   

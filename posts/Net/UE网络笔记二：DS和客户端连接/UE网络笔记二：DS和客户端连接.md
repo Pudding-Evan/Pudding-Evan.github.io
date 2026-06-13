@@ -1,6 +1,6 @@
 # UE网络笔记二：DS和客户端连接
 
-# 零：登录流程
+## 零：登录流程
 
 下文会参照该时序图分析，大致分成三个阶段
 
@@ -8,11 +8,11 @@
 2. 客户端发起连接请求，和DS进行握手通信
 3. 地图加载完成后进行Join入场
 
-![image](./Image/net_2/image.png)
+![image](./images/image.png)
 
-## 概念解析
+### 概念解析
 
-### Dedicated Server
+#### Dedicated Server
 
 Dedicated Server大概可以翻译成专用服务器或者独立服务器。我觉得这个名字主要是和Listen Server区分开，后者意思是一个玩家客户端同时也是服务器，这个进程既有本地玩家、有渲染有输入、也接受其他客户端的连接。Dedicated则更突出体现它是单独的服务器进程。
 
@@ -23,15 +23,15 @@ Dedicated Server大概可以翻译成专用服务器或者独立服务器。我�
 - 客户端会先建立PendingNetGame的连接态，客户端拿到地址和端口后，请求建立连接，双方创建好Connection，完成登录请求。
 - 客户端LoadMap，创建Client World，进入对局。
 
-### **`PendingNetGame`**
+#### **`PendingNetGame`**
 
 `UPendingNetGame` 是客户端连接远端服务器时的过渡对象。它存在于 `ClientTravel` 之后、正式 Client World 建立之前，负责持有目标 `URL`、临时 `PendingNetDriver`、到服务器的 `ServerConnection`、连接错误、地图名以及是否连接成功等状态。
 
-### **`Control Message`**
+#### **`Control Message`**
 
 `NMT_Hello`、`NMT_Challenge`、`NMT_Login`、`NMT_Welcome`、`NMT_Netspeed`、`NMT_Join` 都是控制通道上的消息。通常在`UWorld::NotifyControlMessage` 或 `UPendingNetGame::NotifyControlMessage` 中处理。可以理解为一段特定格式编排的消息，也是通过包装成Packet，通过`ControllerChannel`通道收发，进行连接握手，并推动各自的流程。
 
-# 一、DS启动：**`LoadMap`、`GameMode` 和 Listen**
+## 一、DS启动：**`LoadMap`、`GameMode` 和 Listen**
 
 DS进程启动后，为了创建Server World，会进入到`UEngine::Browse` ，解析地图名后，再进入到`UEngine::LoadMap`加载地图。我们把它作为起点进行叙述。
 
@@ -124,9 +124,9 @@ bool UWorld::Listen(FURL& InURL)
 }
 ```
 
-# 二、客户端DS握手连接
+## 二、客户端DS握手连接
 
-## `ClientTravel`
+### `ClientTravel`
 
 客户端也会拿到后台服务提供的URL，例如ip地址 + 端口号 + 连接信息，然后执行`ClientTravel` ，发起连接请求。`ClientTravel` 可以理解为通用的切换地图的请求函数入口。
 
@@ -174,7 +174,7 @@ UE 的连接服务器和切换地图共用同一套 Travel 机制。`ClientTrave
 
 真正执行发生在 `UEngine::TickWorldTravel`，本地地图进入 `LoadMap`，网络地址在客户端进入 `UPendingNetGame` 的分支处理。
 
-## `UEngine::TickWorldTravel`
+### `UEngine::TickWorldTravel`
 
 `UEngine::TickWorldTravel` 是`Engine`每帧用来推进“换图 / 连接 / `PendingNetGame`”的入口。
 
@@ -265,7 +265,7 @@ void UPendingNetGame::InitNetDriver()
 }
 ```
 
-## Login处理
+### Login处理
 
 1. DS收到客户端发送的`NMT_Hello` 信息后，进行一些基础检查，例如版本匹配，是否需要升级等。
 2. 通过基础检查后，发`NMT_Challenge` 消息给客户端。
@@ -346,11 +346,11 @@ void AGameModeBase::PreLoginAsync(
 
 到目前为止，依然只是在做登录进场前的确认工作。这还不是“玩家进入游戏”，客户端还没有加载服务器指定地图，也还没有发送 `NMT_Join`。一旦确认连接参数和游戏准入等设置都没问题了，下一步才到正式登场。
 
-# 三、加载服务器地图、Join游戏
+## 三、加载服务器地图、Join游戏
 
 客户端收到`NMT_Welcome`后，会根据服务器下发的地图名加载Client World。等到LoadMap完成，客户端发送`NMT_Join` ，服务器收到信息后、创建出真正的`PlayerController` ，并进入`GameMode::Login`和`PostLogin` 
 
-## `Welcome`后客户端`LoadMap`
+### `Welcome`后客户端`LoadMap`
 
 `NotifyControlMessage`接收到`NMT_Welcome`消息后，写入地图名字，然后设置`bSuccessfullyConnected = true` ，下一帧`UEngine::TickWorldTravel` 就会进入`PendingNetGame`的地图加载分支
 
@@ -396,7 +396,7 @@ void UEngine::TickWorldTravel(...)
 
 这里解释了`NMT_Join`并非在`NMT_Welcome` 就立刻发送，客户端需要先加载这张地图。
 
-## `PendingNetDriver`移到新`World` 、创建临时`PlayerController`
+### `PendingNetDriver`移到新`World` 、创建临时`PlayerController`
 
 上文提到了服务器视角的`UEngine::LoadMap` ,客户端这里在这里一些差别。
 
@@ -508,7 +508,7 @@ void UNetConnection::HandleClientPlayer(APlayerController* PC, UNetConnection* N
 好了，总之客户端地图加载成功后，`PendingNetGame::LoadMapCompleted` 会设置`bLoadedMapSuccessfully` ，随后 `TickWorldTravel` 调用 `TravelCompleted`
 并最终调用`PendingNetGame::SendJoin` 发送`NMT_Join`消息，告诉服务器我已经加载好了。
 
-## 服务器`SpawnPlayerActor`
+### 服务器`SpawnPlayerActor`
 
 服务器收到`NMT_Join` 后，会检查当前连接还没有`PlayerController` ，然后调用`SpawnPlayActor` ，这里是登录流程真正进入GamePlayer的地方。到这里，服务器侧才算真正有了这个玩家。
 
@@ -546,7 +546,7 @@ APlayerController* UWorld::SpawnPlayActor(...)
 - `GameMode::Login` 创建出服务器的权威`PlayerController`
 - `GameMode::PostLogin` 玩家有了服务器的PC后，可以做Gameplayer初始化的逻辑了
 
-# 总结
+## 总结
 
 1. DS 加载地图时，先创建 GameMode。GameMode 只存在于服务端。
 2. GameMode 初始化时创建 GameState。GameState 是复制对象，客户端加载服务器地图并建立复制后，会从服务器同步到客户端。

@@ -1,4 +1,4 @@
-# Gas设计解析一：ASC与Attribute
+# GAS设计解析一：ASC与Attribute
 
 GAS 是虚幻引擎的一套可扩展技能框架。它主要包含几类内容：
 
@@ -10,7 +10,7 @@ GAS 是虚幻引擎的一套可扩展技能框架。它主要包含几类内容�
 
 这一篇先从 Ability System Component 和 Attribute 说起。简单来说，ASC 是 GAS 的中枢，Attribute 是被这套系统管理和修改的数据。后面的 GameplayEffect、GameplayAbility、GameplayCue、GameplayTag，最后都会回到 ASC 这里做登记、查询、应用和同步。
 
-# Ability System Component
+## Ability System Component
 
 ASC 是这套技能系统管理的中枢。每个需要被 GAS 管理和影响的 Actor，都需要拥有一个 `UAbilitySystemComponent`。同时，这个组件继承自 `UGameplayTasksComponent`，所以它天然可以和 AbilityTask 这套异步任务机制配合。
 
@@ -42,9 +42,9 @@ AbilitySystemComponent->InitAbilityActorInfo(InOwnerActor, InAvatarActor);
 
 例如 `UAbilityTask_ApplyRootMotionConstantForce` 会从 ActorInfo 里拿到 `MovementComponent`，然后执行 RootMotionSource 相关逻辑。
 
-![FGameplayAbilityActorInfo 缓存信息](Image/01_ASC与Attribute/01_01.png)
+![FGameplayAbilityActorInfo 缓存信息](./images/01_01.png)
 
-## 属性及自动注册
+### 属性及自动注册
 
 比如角色拥有血量、魔法这样的属性。如果没有 GAS，我们可以把这些值直接写进对应的 Actor 中管理。引入 GAS 之后，期待被 GAS 影响的属性会被放进 `UAttributeSet`，并注册到 ASC 中。
 
@@ -70,7 +70,7 @@ void RemoveAllSpawnedAttributes();
 void SetSpawnedAttributesListDirty();
 ```
 
-### 构造期注册
+#### 构造期注册
 
 最常见的方式是在 OwnerActor 的构造函数中创建 AttributeSet 子对象：
 
@@ -80,7 +80,7 @@ HealthSet = CreateDefaultSubobject<UHealthAttributeSet>(TEXT("HealthSet"));
 
 ASC 初始化时会查找 OwnerActor 下面的 AttributeSet 子对象，并把它们加入 `SpawnedAttributes`。这种方式最稳定，也最符合 GAS 的默认假设。
 
-### 运行时注册
+#### 运行时注册
 
 也可以在运行时添加 AttributeSet，例如武器装备后临时添加武器属性：
 
@@ -98,7 +98,7 @@ AbilitySystemComponent->ForceReplication();
 
 这里需要注意一个同步问题：如果服务端移除了某个 AttributeSet，而客户端随后才收到这个 AttributeSet 内某个属性的复制更新，就可能出现客户端找不到 AttributeSet 的情况。运行时移除 AttributeSet 要非常谨慎，尤其不要在相关 GameplayEffect、属性复制和预测效果还没有干净结束时直接移除。
 
-## ASC 的关键成员
+### ASC 的关键成员
 
 ASC 里有几个关键的成员变量：
 
@@ -114,7 +114,7 @@ FActiveGameplayCueContainer ActiveGameplayCues;
 
 `ActiveGameplayCues` 保存当前激活的 GameplayCue 状态。Cue 更偏表现层，例如持续燃烧特效、命中特效、声音等。
 
-# Attribute
+## Attribute
 
 GAS 中的属性本质是一组float，但是被包装成了一个特殊的结构体，即 `FGameplayAttributeData`：
 
@@ -142,7 +142,7 @@ protected:
 
 Instant GameplayEffect 通常修改 BaseValue。Duration 和 Infinite GameplayEffect 的 Modifier 则通常在效果生效期间参与属性计算，影响 CurrentValue。这也很好理解，即时 GE 改完就结束，因此可以直接改动 BaseValue；持续 GE 后续还会被移除，所以更适合让 Modifier 临时参与当前值计算，结束后再重新算回去。
 
-## 定义 Attribute
+### 定义 Attribute
 
 项目里通常会写一个宏来生成 Attribute 的访问器：
 
@@ -170,7 +170,7 @@ GAMEPLAYATTRIBUTE_REPNOTIFY(UHealthAttributeSet, Health, OldValue);
 
 这样 GAS 才能正确感知属性复制带来的变化。
 
-## 修改 Attribute 的方式
+### 修改 Attribute 的方式
 
 修改 Attribute 有两种方式：
 
@@ -181,11 +181,11 @@ Setter 更像是代码层面的直接赋值，适合初始化或少量明确场�
 
 原因也不复杂：GameplayEffect 承担了 Attribute 修改的媒介角色。受到伤害、获得治疗、增加 Buff、触发消耗，都是“某种效果作用到 ASC 上”。如果都绕过 GE 直接写值，后面就很难统一处理预测、标签、堆叠、持续时间、GameplayCue 和网络同步。
 
-## 修改过程中的关键函数
+### 修改过程中的关键函数
 
 AttributeSet 提供了一组重要钩子，项目中经常会重写它们：
 
-![Attribute 修改相关钩子](Image/01_ASC与Attribute/01_02.png)
+![Attribute 修改相关钩子](./images/01_02.png)
 
 `PreAttributeChange` 在 CurrentValue 变化前调用，适合做限制操作，例如 Clamp。它接收的是引用参数，可以直接修正即将写入的值。
 
@@ -229,7 +229,7 @@ struct FOnAttributeChangeData
 
 其中 `GEModData` 只在服务端执行 GameplayEffect 修改时可靠存在。客户端收到属性复制时，不应假设这里一定有完整的 GE 上下文。
 
-# 总结
+## 总结
 
 ASC 是 GAS 的状态中枢，OwnerActor 决定逻辑归属，AvatarActor 决定当前世界中的执行对象。AttributeSet 负责承载属性，`SpawnedAttributes` 负责把这些属性注册给 ASC。
 

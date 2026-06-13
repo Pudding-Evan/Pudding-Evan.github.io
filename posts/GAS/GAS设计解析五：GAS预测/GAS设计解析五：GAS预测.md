@@ -1,4 +1,4 @@
-# Gas设计解析五：预测
+# GAS设计解析五：GAS预测
 
 前面几篇把 ASC、Attribute、GE、Ability 和 Tag 的关系基本铺开了。预测这一篇要回答的是另一类问题：在多人游戏里，客户端按下技能以后，为什么不用等服务端往返确认就能立刻看到反馈；如果服务端最后拒绝了这次操作，客户端又如何把刚才提前做过的事情撤掉。
 
@@ -10,13 +10,13 @@ GAS 的预测可以理解为：
 
 这个思路和 UE 网络层的基本模型一致：客户端可以发起请求和提前表现，服务端决定最终结果。
 
-# PredictionKey 的复制规则
+## PredictionKey 的复制规则
 
 `FPredictionKey` 的主要字段是 `Current`、`Base` 和 `bIsServerInitiated`。`Current` 表示当前预测动作的 Key。`Base` 用来描述预测动作之间的依赖关系：如果在已有 Key 的窗口里又生成新 Key，新 Key 会沿着旧 Key 建立一条 Key 链。这样前面的预测动作被拒绝时，依赖它产生的后续预测副作用也能跟着被拒绝或清理。`bIsServerInitiated` 则表示这个 Key 由服务端发起，用于服务端发起的同步流程。
 
 源码里更值得关注的是 `FPredictionKey::NetSerialize`。它有一条非常关键的规则：客户端把 PredictionKey 发给服务端时，Key 会正常序列化过去；服务端把带 PredictionKey 的属性复制回客户端时，只有最初发起预测的客户端会收到这个 Key，其他客户端会收到无效 Key。这个判断通过 `PredictiveConnectionObjectKey` 完成。这样做的原因很明确。PredictionKey 是预测客户端用来回滚和追平的本地凭证，其他客户端不参与这次预测，也不需要知道这次权威结果对应哪个本地预测动作。其他客户端只需要看服务端最终复制出的 Ability、GE、Attribute、Cue、Tag 状态即可。
 
-# 预测窗口：把副作用归到同一个 Key 下
+## 预测窗口：把副作用归到同一个 Key 下
 
 GAS 使用 `FScopedPredictionWindow` 管理一个预测窗口。预测窗口的作用不是“让代码变得可预测”这么抽象，而是很具体：在这一段调用范围里，把 ASC 的 `ScopedPredictionKey` 设成当前 Key。后续应用 GE、触发 GameplayCue、发送某些 Ability RPC 时，就能从 ASC 上拿到这个 Key，并把自己归到同一批预测副作用里。
 
@@ -50,7 +50,7 @@ FScopedPredictionWindow ScopedPredictionWindow(this, PredictionKey);
 
 这就是很多“为什么我在 Ability 里应用 GE 却没有预测”的根源。代码仍然写在同一个 Ability 类中，但逻辑已经跨帧，最初的预测窗口早就结束了。
 
-# Ability 激活时的预测主线
+## Ability 激活时的预测主线
 
 以 `LocalPredicted` Ability 为例，客户端从 `TryActivateAbility` 进入。`TryActivateAbility` 会先处理网络策略：如果当前不是本地控制端，不能直接激活 LocalOnly 或 LocalPredicted；如果是 ServerOnly 或 ServerInitiated，则客户端只能请求服务端。真正进入 `InternalTryActivateAbility` 后，系统完成 ActorInfo、网络角色、AbilitySpec、实例策略、CanActivateAbility 等检查。通过检查后，LocalPredicted 分支会打开预测窗口。
 
@@ -105,7 +105,7 @@ FPredictionKeyDelegates::BroadcastCaughtUpDelegate(PredictionKey);
 
 客户端收到 CatchUp 后，清理本地预测副作用，保留服务端权威复制结果。可以把两条消息分开理解：`ClientActivateAbilitySucceed` 是服务端说“这次激活我接受了”，`ReplicatedPredictionKeyMap` 是服务端说“带这个 Key 的权威结果已经复制到了。”
 
-# GameplayEffect 如何预测
+## GameplayEffect 如何预测
 
 GE 的预测入口首先看权限。`UAbilitySystemComponent::HasNetworkAuthorityToApplyGameplayEffect` 的逻辑很短：
 
@@ -134,7 +134,7 @@ bool bTreatAsInfiniteDuration =
 
 服务端复制回来的 `FActiveGameplayEffect` 也会携带同一个 PredictionKey。预测客户端收到后，`FActiveGameplayEffect::PostReplicatedAdd` 会判断本地是否已经有同 Key 的预测效果，并抑制一部分 GameplayCue Applied 事件，避免同一个效果播放两次。这就是 Redo 问题的处理。
 
-# Attribute 为什么能提前变化
+## Attribute 为什么能提前变化
 
 客户端预测应用 GE 后，Attribute 会在本地提前变化。比如预测一个 Instant Damage GE，客户端 Health 会先扣掉，UI 立刻响应。服务端稍后计算并复制权威属性值回来。如果客户端预测值和服务端不同，客户端会被修正。
 
@@ -142,7 +142,7 @@ bool bTreatAsInfiniteDuration =
 
 我们之前提到在GE修改属性这一章里提到，Modifier可以被预测，Execution不能被预测，可以更详细的解释一下：Modifier 可以预测，是因为它结构受限：一个 Attribute、一个 Op、一个 Magnitude。只要客户端拥有同样输入，客户端可以先得到同样的属性修正。AttributeBased 和 MMC 也可以参与预测，但前提是客户端能拿到一致的捕获属性、Tag 和 SetByCaller 数据。而ExecutionCalculation 不能预测，是因为它允许执行任意项目代码，可以读取复杂上下文并输出多个属性修改。GAS 不假设客户端一定拥有和服务端相同的数据，也不试图合并客户端和服务端各自执行出的复杂结果。因此 Execution 更适合作为服务端结算点，客户端可以预测表现，但不应该预测最终属性结果。
 
-# GameplayCue 和 Tag 的去重
+## GameplayCue 和 Tag 的去重
 
 GameplayCue 的预测和 GE 类似，也是围绕 PredictionKey 做去重和清理。客户端在预测窗口中添加 Cue 时，会走 PredictiveAdd，并把 Cue 的清理绑定到 PredictionKey 的 Reject 或 CatchUp 上。服务端复制或 Multicast Cue 时，如果发现这是预测客户端本地已经处理过的 Key，就会避免重复触发。
 
@@ -150,7 +150,7 @@ GameplayCue 的预测和 GE 类似，也是围绕 PredictionKey 做去重和清�
 
 GameplayTag 通常跟随 GE 或 Ability 状态一起预测。预测 GE 授予的 Tag 会先出现在客户端，用于本地 UI、输入和 Ability 判断。服务端结果追平后，Tag 状态以权威复制为准。比如冲刺 Ability 预测授予 `State.Dashing`，客户端可以立刻进入冲刺表现；如果服务端拒绝，Tag 被撤销，表现回滚。
 
-# 什么适合预测
+## 什么适合预测
 
 适合预测的内容，一般有两个条件：客户端需要即时反馈，并且这件事的输入足够明确，结果可以被回滚或追平。`LocalPredicted` Ability 的初始激活、Ability 激活调用栈内应用的 Modifier GE、GameplayCue、ActivationOwnedTags、简单资源消耗和冷却，都属于 GAS 预测重点覆盖的范围。
 
@@ -158,7 +158,7 @@ GameplayTag 通常跟随 GE 或 Ability 状态一起预测。预测 GE 授予的
 
 跨帧预测要特别小心。Ability 初始激活时的预测窗口只覆盖当时的调用栈。AbilityTask 后续回调如果还要预测 GE 或 Cue，就需要新的 PredictionKey，并通过对应 Server RPC 把 Key 交给服务端。这一点和 UE 网络文章里“本地先做、RPC 到服务端、服务端复制回来追平”的思路一致，只是 GAS 把 Key、回调和副作用管理封装好了。
 
-# 举个栗子
+## 举个栗子
 
 把前面的内容串起来，一个 LocalPredicted 火球技能可以这样理解。
 
@@ -170,7 +170,7 @@ Ability 本地开始播放施法动画，可能授予 `State.Casting`，触发�
 
 如果服务端接受，服务端执行 Ability 并复制权威GE、Attribute、Cue、Tag 状态。预测客户端收到带同一个 PredictionKey 的权威结果时，系统知道它对应本地已有预测副作用，于是避免重复播放 Cue。随后 `ReplicatedPredictionKeyMap` 复制到客户端，广播 CaughtUp Delegate，本地预测用的临时 AGE 和 Cue 记录被清理。最终客户端显示服务端权威状态。
 
-# 其他
+## 其他
 
 * 预测不是同步。预测让客户端提前表现，真正状态仍然来自服务端复制
 
@@ -178,7 +178,7 @@ Ability 本地开始播放施法动画，可能授予 `State.Casting`，触发�
 
 * Modifier 可以预测，不代表结果永远正确。客户端输入和服务端输入不一致时，服务端仍然会覆盖。Execution 不能预测，是因为它太自由，不适合作为客户端可复现的提前结算。
 
-# 总结
+## 总结
 
 GAS 预测的主线可以概括为：客户端生成 PredictionKey，在预测窗口中本地执行 Ability、GE、Cue 和 Tag 副作用；同一个 Key 通过 RPC 发给服务端；服务端用这个 Key 执行权威逻辑；失败时 Reject 回滚，成功时复制权威结果，并通过 `ReplicatedPredictionKeyMap` 触发 CatchUp；客户端清理本地预测副作用，避免重复表现，最终接受服务端状态。
 

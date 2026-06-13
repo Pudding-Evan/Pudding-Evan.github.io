@@ -1,8 +1,8 @@
-# 注册复制属性
+# UE网络笔记三：属性同步机制
 
+## 注册复制属性
 
-
-## 注册写法
+### 注册写法
 
 一个典型的写法如下
 ```c++
@@ -26,7 +26,7 @@ class AMyActor : public AActor
 
 可以看下宏展开
 
-<img src="./Image/net_3/image1.png" alt="image1" style="zoom: 67%;" />
+<img src="./images/image1.png" alt="image1" style="zoom: 67%;" />
 
 这里其实有很多细节，一一解释下。
 
@@ -77,7 +77,7 @@ FProperty* ReplicatedProperty = GetReplicatedProperty(StaticClass(), AMyActor::S
 
 
 
-## FRepLayOut
+### FRepLayOut
 
 通常当某个类第一次参与网络复制时，引擎要为这个类创建FRepLayout。可以看到，这里是通过CDO来调用`GetLifetimeReplicatedProps`
 
@@ -120,4 +120,3 @@ TSharedPtr<FRepLayout> UNetDriver::GetObjectClassRepLayout( UClass * Class )
    3. 长时间无ACK/NAK，为了避免缓冲区溢出，会把历史里的`Changelist`合并一起发
 
 这里基本解释了属性同步各种相关细节。
-

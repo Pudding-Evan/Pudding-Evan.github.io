@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "sync-articles": "node scripts/sync-articles-index.mjs",
     "sync-static": "node scripts/sync-static.mjs",
     "dev": "npm run sync-static && node scripts/run-astro.mjs dev",
     "build": "npm run sync-static && node scripts/run-astro.mjs build",

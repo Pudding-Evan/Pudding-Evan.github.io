@@ -1,14 +1,14 @@
-# Gas设计解析三：GE属性修改案例
+# GAS设计解析三：GE属性修改案例
 
 上一篇章提到 GE 对属性进行修改的两大方式：Modifier 与 Execution。其中 Modifier 又有四种 Magnitude 计算方式。这一偏结合实际项目案例，分别说明它们是如何运作的。
 
-![GE 属性修改方式概览](Image/03_GE属性修改案例/03_01.png)
+![GE 属性修改方式概览](./images/03_01.png)
 
-# Modifier
+## Modifier
 
 Modifier 这种方式一次只能对一个 Attribute 进行修改，并且需要给定一个修改方式，也就是 ModifierOp。
 
-![Modifier 配置示例](Image/03_GE属性修改案例/03_02.png)
+![Modifier 配置示例](./images/03_02.png)
 
 GE 中保存 Modifier 的成员大致如下：
 
@@ -51,7 +51,7 @@ UPROPERTY(EditDefaultsOnly, Category = Magnitude)
 FSetByCallerFloat SetByCallerMagnitude;
 ```
 
-![ModifierMagnitude 结构](Image/03_GE属性修改案例/03_03.png)
+![ModifierMagnitude 结构](./images/03_03.png)
 
 实际上，这些方法都是为了拿到一个 float。
 
@@ -96,11 +96,11 @@ FActiveGameplayEffectsContainer::ExecuteActiveEffectsFrom
 
 这个流程看上去很长，但核心仍然是那句话：算出一个 float，然后按一种操作方式应用到一个 Attribute 上。
 
-## Scalable Float
+### Scalable Float
 
 如图，这个配置代表：当 GE 应用时，对属性 `Health` 加上 20。
 
-![ScalableFloat 修改 Health](Image/03_GE属性修改案例/03_04.png)
+![ScalableFloat 修改 Health](./images/03_04.png)
 
 假设配置如下：
 
@@ -132,7 +132,7 @@ FGameplayModifierEvaluatedData EvalData(
 
 这也是 BaseValue 和 CurrentValue 分开的意义。
 
-### Stack 下的 Magnitude
+#### Stack 下的 Magnitude
 
 如果 GE 有 Stack，并且配置了让 Stack 影响 Modifier Magnitude，系统会调用：
 
@@ -188,7 +188,7 @@ Final = ((Base + Additive) * Multiplicative / Division * CompoundMultiply) + Fin
 
 所以它们会形成 `*1.7`，不是 `*1.8`。写数值系统时这点要提前和策划说明，否则 Debug 时很容易互相怀疑公式写错了。
 
-## AttributeBased
+### AttributeBased
 
 AttributeBased 的用途是：用某个 Source 或 Target Attribute 来计算本次 Modifier Magnitude。
 
@@ -233,7 +233,7 @@ Result = (Coefficient * (AttribValue + PreMultiplyAdditiveValue)) + PostMultiply
 
 AttributeBased 适合表达简单、纯数据驱动的公式。如果公式开始需要读取多个属性、判断 Tag、区分暴击、护盾、格挡，就不要硬塞在这里，改用 MMC 或 Execution。
 
-## MMC
+### MMC
 
 MMC 指 `UGameplayModMagnitudeCalculation`，也就是 CustomCalculationClass。
 
@@ -277,7 +277,7 @@ return AttackPower * FMath::Clamp(ChargeTime, 0.f, 2.f);
 
 这里 SetByCaller 提供运行时蓄力时间，Captured Attribute 提供角色属性，MMC 负责把它们组合成一个最终数值。
 
-## SetByCaller
+### SetByCaller
 
 SetByCaller 表示这个 Magnitude 不在 GE 资产中写死，而是在运行时写入 Spec。
 
@@ -307,7 +307,7 @@ SetByCaller 适合这些情况：
 - 技能外部已经算好伤害，只需要交给 GE 应用。
 - 同一个 GE 资产被多个 Ability 复用，每次传入不同数值。
 
-# Execution
+## Execution
 
 Execution 指 `UGameplayEffectExecutionCalculation`。它和 MMC 最大的不同是：MMC 返回一个 float，Execution 可以输出多个属性修改。
 
@@ -352,7 +352,7 @@ Execution 可以做这些事：
 
 这种逻辑用 Modifier 和 MMC 也许能绕出来，但会很别扭。Execution 就是为这类服务端结算准备的，但代价是Execution 不能被预测。源码和文档都很明确：ExecutionCalculation 不走客户端预测。原因也很直接，它可以做的事情太多，输入来源也太复杂，客户端不一定拥有同样数据。最终结果应当由服务端计算，再同步给客户端。
 
-# 一次属性修改的完整路径
+## 一次属性修改的完整路径
 
 把上面的内容串起来，一个 Instant GE 修改属性的大致路径是：
 
@@ -376,7 +376,7 @@ Duration 和 Infinite GE 的路径略有不同。它们会进入 ActiveGameplayE
 
 Periodic GE 则介于两者之间：它本身是 Duration 或 Infinite，但每次周期触发时，会像 Instant 一样执行一遍 Modifier/Execution。
 
-# 最佳食用指南
+## 最佳食用指南
 
 面对一个 GE 属性修改时，可以先把它分成三档来看。
 
@@ -396,7 +396,7 @@ Execution 是能力最强、也最灵活的一档。它可以读取更多上下�
 
 
 
-# 本章结论
+## 本章结论
 
 GE 修改属性的核心是：先得到 Magnitude，再通过 ModifierOp 应用到 Attribute。
 

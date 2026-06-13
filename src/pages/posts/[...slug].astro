@@ -12,15 +12,16 @@ export function getStaticPaths() {
 const { post } = Astro.props;
 const Content = post.Content;
 const tocHeadings = post.headings;
+const rootPrefix = "../".repeat(post.slug.split("/").length);
 ---
 
-<SiteLayout title={post.title} description={post.summary} current="note" prefix="../">
+<SiteLayout title={post.title} description={post.summary} current="note" prefix={rootPrefix}>
   <main class="article-page site-shell">
-    <a class="text-link article-back" href="../articles.html">BACK TO ARTICLES</a>
+    <a class="text-link article-back" href={`${rootPrefix}articles.html`}>BACK TO ARTICLES</a>
     <div class="article-shell">
       <article class="article">
         <div class="meta">
-          <a class="meta-tag" href={`../articles.html?tag=${tagFilterValue(post.tag)}`}>{post.tag}</a>
+          <a class="meta-tag" href={`${rootPrefix}articles.html?tag=${tagFilterValue(post.tag)}`}>{post.tag}</a>
           <span>{displayDate(post.date)}</span>
           <span>{post.readMinutes} MIN READ</span>
         </div>

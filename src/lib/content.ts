@@ -40,9 +40,16 @@ const root = process.cwd();
 const articleSource = path.join(root, "content", "articles.md");
 const videoSource = path.join(root, "content", "videos.md");
 
-const postModules = import.meta.glob("../../posts/*.md", {
+const postModules = import.meta.glob("../../posts/*/*/*.md", {
   eager: true
 }) as Record<string, MarkdownModule>;
+
+const categoryLabels: Record<string, string> = {
+  dev: "Dev",
+  gameplay: "Gameplay",
+  gas: "GAS",
+  net: "Net"
+};
 
 function splitMarkdownTableRow(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
@@ -81,11 +88,34 @@ function articleMetadata(): Map<string, Record<string, string>> {
     const base = normalizeKey(path.posix.basename(normalized));
     const stem = base.replace(/\.md$/i, "");
     metadata.set(normalized, row);
+    metadata.set(normalizeKey(`posts/${normalized}`), row);
     metadata.set(base, row);
     metadata.set(stem, row);
   }
 
   return metadata;
+}
+
+function postSourceInfo(modulePath: string): {
+  category: string;
+  fileStem: string;
+  sourceName: string;
+} {
+  const normalized = modulePath.replace(/\\/g, "/");
+  const sourceName = normalized.replace(/^.*?posts\//, "");
+  const parts = sourceName.split("/");
+  const category = parts[0] || "Dev";
+  const fileStem = path.posix.basename(sourceName).replace(/\.md$/i, "");
+
+  return {
+    category,
+    fileStem,
+    sourceName
+  };
+}
+
+function categoryTag(category: string): string {
+  return categoryLabels[category.toLowerCase()] ?? category;
 }
 
 function slugify(value: string): string {
@@ -105,11 +135,6 @@ function displayDate(value: string): string {
 
 function textValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function firstHeading(markdown: string): string {
-  const match = markdown.match(/^#\s+(.+)$/m);
-  return match ? match[1].replace(/[`*_]/g, "").trim() : "";
 }
 
 function firstParagraph(markdown: string): string {
@@ -153,25 +178,25 @@ export function getAllArticles(): Article[] {
 
   const posts = Object.entries(postModules)
     .map(([modulePath, mod]) => {
-      const sourceName = path.posix.basename(modulePath);
-      const stem = sourceName.replace(/\.md$/i, "");
+      const { category, fileStem, sourceName } = postSourceInfo(modulePath);
       const row =
-        metadata.get(normalizeKey(sourceName)) ||
-        metadata.get(normalizeKey(stem)) ||
         metadata.get(normalizeKey(`posts/${sourceName}`)) ||
+        metadata.get(normalizeKey(sourceName)) ||
+        metadata.get(normalizeKey(fileStem)) ||
         {};
       const frontmatter = mod.frontmatter ?? {};
       const raw = mod.rawContent?.() ?? "";
-      const title = row.title || textValue(frontmatter.title) || firstHeading(raw) || stem;
+      const title = fileStem;
       const date = row.date || textValue(frontmatter.date) || "2026-01-01";
-      const tag = row.tag || textValue(frontmatter.tag) || "NOTE";
+      const tag = categoryTag(category);
       const summary = row.summary || textValue(frontmatter.summary) || firstParagraph(raw);
       const orderValue = row["顺序"] || row.order || textValue(frontmatter.order);
       const order = /^\d+$/.test(orderValue) ? Number(orderValue) : undefined;
       const headings = (mod.getHeadings?.() ?? []).filter((heading) => heading.depth >= 2 && heading.depth <= 3);
+      const slug = `${slugify(category)}/${slugify(textValue(frontmatter.slug) || fileStem)}`;
 
       return {
-        slug: slugify(textValue(frontmatter.slug) || stem),
+        slug,
         sourceName,
         title,
         date,
@@ -183,7 +208,7 @@ export function getAllArticles(): Article[] {
         Content: mod.Content
       };
     })
-    .filter((post) => !post.sourceName.startsWith("_"));
+    .filter((post) => !post.sourceName.split("/").some((part) => part.startsWith("_")));
 
   return sortByDate(posts);
 }

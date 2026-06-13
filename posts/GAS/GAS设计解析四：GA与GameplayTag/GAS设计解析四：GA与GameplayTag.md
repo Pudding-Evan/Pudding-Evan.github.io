@@ -1,10 +1,10 @@
-# Gas设计解析四：GA与GameplayTag
+# GAS设计解析四：GA与GameplayTag
 
 GameplayAbility是真正承载“技能业务流程”的对象。如果说 ASC 是技能系统的中枢，Attribute 是被修改的数据，GameplayEffect 是对 ASC 产生影响的数据化效果，那么 GameplayAbility 就是“什么时候检查、什么时候启动、什么时候播放动作、什么时候提交消耗、什么时候应用 GE、什么时候等待输入、什么时候结束”的业务载体。例如，一个火球术通常是一段 Ability 流程：检查蓝量和冷却，播放施法动画，等待命中或目标数据，然后对目标应用伤害 GE，再应用自身冷却 GE，最后结束 Ability。GE 只是这条流程中被应用出去的效果。
 
 GameplayTag 在这套技能流程里大量使用，不管是GA、GE都绕不开它。GAS 的很多判断不会写成 `bIsStunned`、`bIsDead`、`bCanCastFireball` 这类布尔变量，一定是通过 `State.Stunned`、`State.Dead`、`Ability.Fireball`、`Cooldown.Fireball` 这样的层级标签表达。Tag 的价值在于，它把许多分散的状态和条件变成一套可组合、可查询、可配置的树结构状态，非常强大灵活。
 
-# Ability 负责什么
+## Ability 负责什么
 
 Epic 官方文档对 GameplayAbility 的定义是：`UGameplayAbility` 定义一个游戏内能力做什么、使用它需要什么成本、在什么条件下可以使用。它可以异步执行，可以用 AbilityTask 处理动画、粒子、声音、玩家输入和交互，也可以根据网络策略运行在客户端或服务端。
 
@@ -22,7 +22,7 @@ Epic 官方文档对 GameplayAbility 的定义是：`UGameplayAbility` 定义一
 
 举个例子：一个普通攻击 Ability，可以负责输入、连段窗口、动画事件、命中检测；真正造成伤害时应用一个 Damage GE。一个治疗 Ability，可以负责选目标、施法时间、打断逻辑；真正恢复生命时应用 Heal GE。一个被动 Ability，可以在被授予后监听某类事件；当事件发生时应用对应 GE 或触发额外流程。
 
-# Ability 如何进入 ASC
+## Ability 如何进入 ASC
 
 Ability 需要先被授予给 ASC，进入 `ActivatableAbilities` 之后，才有资格被激活。
 
@@ -54,7 +54,7 @@ FGameplayAbilitySpecHandle UAbilitySystemComponent::GiveAbility(const FGameplayA
 
 一个 Ability 也可以通过 GE 授予。上一篇提到过，GE 激活期间可以授予 Ability，GE 被移除时 Ability 也会跟着撤销。这适合装备技能、状态技能、临时被动。比如装备一把枪后，一个 Infinite GE 授予 `GA_WeaponFire`；卸下武器时移除 GE，开火 Ability 自然消失。
 
-# Ability 的激活路径
+## Ability 的激活路径
 
 Ability 的激活通常从 ASC 开始：
 
@@ -97,7 +97,7 @@ void UGameplayAbility::CallActivateAbility(...)
 
 * `ActivateAbility` 是实际的业务内容执行的地方。蓝图里对应的是 `Activate Ability` 事件，C++ 中覆写 `UGameplayAbility::ActivateAbility`。官方文档也强调，GameplayAbility 不像 Actor 或 Component 基本不会靠Tick来执行业务逻辑。更常见的写法是启动一组 AbilityTask，让任务在动画结束、输入释放、目标数据返回、GameplayEvent 到提供回调函数，然后在回调中继续流程，换句话说，也就是更多依靠事件触发逻辑。
 
-# CanActivate 与 Commit
+## CanActivate 与 Commit
 
 Ability 激活前会调用 `CanActivateAbility`。：
 
@@ -160,7 +160,7 @@ ApplyCost(...);
 
 这也是GA和GE的功能分界。Ability 自己不直接扣 Mana，也不直接设置 Cooldown 计时器。它通过 Cost GE 和 Cooldown GE 把这两个动作交回 GE系统。
 
-# Ability 网络策略
+## Ability 网络策略
 
 技能执行在服务端还是客户端，主要看 `NetExecutionPolicy`。`UGameplayAbility` 里有四种常见策略：
 
@@ -179,7 +179,7 @@ ApplyCost(...);
 
 源码里 `TryActivateAbility` 对这些策略做了分流。非本地端不能直接激活 `LocalOnly` 或没有预测 Key 的 `LocalPredicted`。非权威端不能直接执行 `ServerOnly` 或 `ServerInitiated`，只能请求服务端。到了 `InternalTryActivateAbility`，`LocalPredicted` 分支会创建预测窗口，设置 ActivationInfo 为 Predicting，然后立刻调用 Server RPC，并在本地继续执行 `CallActivateAbility`。
 
-# Ability 实例策略
+## Ability 实例策略
 
 * `NonInstanced` 表示不创建实例，执行时使用 CDO。它开销低，但不能保存每次激活的状态，也不适合依赖异步任务和实例变量的复杂技能。
 
@@ -187,11 +187,11 @@ ApplyCost(...);
 
 * `InstancedPerExecution` 表示每次激活创建一个新实例。它适合每次激活之间需要完全隔离状态的能力，但在预测和复制上约束更多。
 
-# AbilityTask
+## AbilityTask
 
 GameplayAbility 异步执行主要依赖 AbilityTask。最常用的，例如等待 Montage 结束、等待输入释放、等待 GameplayEvent、等待目标数据、等待 GameplayTag 变化等。
 
-# GameplayTag
+## GameplayTag
 
 GameplayTag 是一套层级标签系统。Epic 官方文档中给的定义是：Gameplay Tags 是用户定义的字符串，作为概念性、层级化标签，可以应用到项目对象上，并用来驱动玩法逻辑。
 
@@ -211,7 +211,7 @@ Tag 用 `.` 分层。`State.Stunned.Heavy` 天然属于 `State.Stunned`，也属
 
 这让 Tag 比枚举更适合表达可扩展的玩法分类。枚举通常是封闭集合，新增类型要改代码；Tag 是项目级字典，可以由配置、资产、数据表和 C++ 原生定义共同维护。
 
-# Tag 在 GAS 中的几类角色
+## Tag 在 GAS 中的几类角色
 
 Tag 在 GAS 里至少有五类常见角色。
 
@@ -225,7 +225,7 @@ Tag 在 GAS 里至少有五类常见角色。
 
 第五类是数据标签。SetByCaller 常用 Tag 作为 Key，例如 `Data.Damage`、`Data.ChargeTime`。这个 Tag 不代表状态，而是代表 Spec 中某个运行时数值的语义。
 
-# Ability 中的 Tag 检查
+## Ability 中的 Tag 检查
 
 `UGameplayAbility::DoesAbilitySatisfyTagRequirements` 是理解 Ability Tag 进行门控判断的关键函数。我们看到GA里通常可以配置一系列的Tag，命名有时候非常迷惑，依赖源码或者是实际的业务才能真的弄清楚是干什么用的，非常不友好。通常游戏项目都会尝试自己写一套上层的框架覆盖掉它，而不是直接来改，因为真的太难用了。
 
@@ -253,7 +253,7 @@ if (!bBlocked && !bMissing)
 
 * ASC 可以从外部阻塞一类 Ability。`ApplyAbilityBlockAndCancelTags` 会在 Ability 激活时调用 `BlockAbilitiesWithTags` 和 `CancelAbilities`。比如翻滚 Ability 激活期间，可以阻塞 `Ability.Attack`，并取消带 `Ability.Cast` 标签的施法 Ability。
 
-# Tag 和 GE 的关系
+## Tag 和 GE 的关系
 
 GE 中的 Tag 更多表达为“效果应用和效果存在期间的规则”。
 
@@ -265,7 +265,7 @@ GE 中的 Tag 更多表达为“效果应用和效果存在期间的规则”。
 
 Tag 是 GAS 中最重要的解耦手段之一。Ability 不必持有 GE 引用，GE 不必知道所有 Ability，UI 不必知道每个技能内部条件。但大家都查同一套 Tag，其实一定程度上，你可以理解为Tag是字典状态集合。
 
-# 一条技能从输入到效果的完整例子
+## 一条技能从输入到效果的完整例子
 
 假设我们做一个蓄力火球 `GA_Fireball`。它的 AbilityTags 是 `Ability.Fire.Fireball`，ActivationBlockedTags 包含 `State.Dead`、`State.Stunned`，Cooldown GE 授予 `Cooldown.Fireball`，Cost GE 消耗 Mana。
 
@@ -277,7 +277,7 @@ Tag 是 GAS 中最重要的解耦手段之一。Ability 不必持有 GE 引用�
 
 
 
-# 总结
+## 总结
 
 GameplayAbility 是 GAS 的业务流程载体。GameplayEffect 是 Ability 常用的结果表达，但不是 Ability 本身。Attribute 负责承载数值，ASC 负责集中管理，GameplayTag 负责把状态、能力分类、冷却、事件和运行时数据的统一语言，给与其他模块修改查询。
 
