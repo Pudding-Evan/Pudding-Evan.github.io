@@ -299,14 +299,13 @@ a {
 
 .signature-hero {
   position: relative;
-  display: grid;
+  display: block;
   isolation: isolate;
-  min-height: var(--home-panel-height);
-  align-items: center;
+  min-height: auto;
   overflow: hidden;
-  padding: clamp(18px, 3vw, 36px) 0 18px;
+  padding: 0 0 clamp(22px, 3vw, 36px);
   border-bottom: 0;
-  background: url("assets/background.png") center right / cover no-repeat;
+  background: transparent;
 }
 
 .signature-hero::before,
@@ -314,23 +313,61 @@ a {
   display: none;
 }
 
+.signature-stage {
+  position: relative;
+  container-type: inline-size;
+  overflow: hidden;
+  height: clamp(360px, 30vw, 573px);
+  background: #122033;
+}
+
+.signature-stage::before {
+  position: absolute;
+  inset: -18px;
+  z-index: 0;
+  content: "";
+  background: url("assets/background.jpg") center / cover no-repeat;
+  filter: blur(16px) saturate(0.9);
+  opacity: 0.82;
+  transform: scale(1.04);
+}
+
+.signature-banner {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  max-width: 1908px;
+  height: 100%;
+  margin: 0 auto;
+  object-fit: contain;
+  object-position: center;
+  background: #122033;
+}
+
 .signature-shell {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(460px, 42vw) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   justify-items: center;
-  gap: clamp(18px, 4vw, 70px);
+  gap: clamp(10px, 2vw, 26px);
+  padding-top: clamp(8px, 1.4vw, 18px);
 }
 
 .signature-parchment {
-  position: relative;
+  position: absolute;
+  top: 68%;
+  left: 50%;
+  z-index: 2;
   container-type: inline-size;
-  width: clamp(460px, 32vw, 720px);
+  width: 560px;
+  max-width: 30%;
   margin: 0;
-  justify-self: start;
-  filter: drop-shadow(12px 18px 0 rgba(56, 43, 37, 0.18));
+  filter: drop-shadow(7px 10px 0 rgba(13, 10, 16, 0.24));
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-2deg);
 }
 
 .signature-parchment img {
@@ -341,17 +378,15 @@ a {
 
 .signature-ink {
   position: absolute;
-  inset: 19% 13% 20%;
+  inset: 18% 12% 18%;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  row-gap: clamp(6px, 2cqw, 18px);
+  place-items: center;
   color: #5f341e;
   text-align: center;
   pointer-events: none;
 }
 
 .signature-ink p {
-  align-self: end;
   justify-self: center;
   max-width: min(560px, 75cqw);
   margin: 0;
@@ -363,19 +398,6 @@ a {
     0 1px 0 rgba(255, 233, 169, 0.62),
     0 0 1px rgba(91, 46, 23, 0.28);
   transform: rotate(-1.2deg);
-}
-
-.signature-credit {
-  justify-self: end;
-  margin-right: clamp(10px, 7cqw, 50px);
-  color: rgba(99, 56, 34, 0.72);
-  font-family: "Segoe Script", "Lucida Handwriting", "Brush Script MT", cursive;
-  font-size: clamp(14px, 3.8cqw, 29px);
-  font-style: normal;
-  font-weight: 600;
-  line-height: 1;
-  text-shadow: 0 1px 0 rgba(255, 233, 169, 0.55);
-  transform: rotate(-3deg);
 }
 
 .scroll-sigil {
@@ -1417,18 +1439,13 @@ h1 {
     grid-template-columns: 1fr 1fr;
   }
 
-  .signature-hero {
-    background:
-      url("assets/background.png") 62% center / cover no-repeat;
-  }
-
   .signature-shell {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .signature-parchment {
-    width: min(82vw, 520px);
-    justify-self: center;
+    width: 430px;
+    max-width: 34%;
   }
 
   .scroll-sigil {
@@ -1479,14 +1496,11 @@ h1 {
   }
 
   .signature-hero {
-    min-height: 470px;
-    padding: 22px 0 26px;
-    background-position: 64% center;
+    padding-bottom: 26px;
   }
 
-  .signature-hero::before,
-  .signature-hero::after {
-    inset: 0;
+  .signature-banner {
+    min-height: 0;
   }
 
   .signature-shell {
@@ -1494,25 +1508,20 @@ h1 {
   }
 
   .signature-parchment {
-    width: min(calc(100vw - 30px), 430px);
+    top: 69%;
+    width: min(70vw, 340px);
     max-width: none;
-    filter: drop-shadow(6px 10px 0 rgba(56, 43, 37, 0.16));
+    filter: drop-shadow(4px 6px 0 rgba(13, 10, 16, 0.22));
   }
 
   .signature-ink {
-    inset: 19% 13% 17%;
-    row-gap: 5px;
+    inset: 18% 12% 18%;
   }
 
   .signature-ink p {
     max-width: 74cqw;
-    font-size: clamp(18px, 5.8cqw, 28px);
+    font-size: clamp(13px, 5.8cqw, 26px);
     line-height: 1.12;
-  }
-
-  .signature-credit {
-    margin-right: clamp(14px, 8cqw, 34px);
-    font-size: clamp(14px, 4cqw, 20px);
   }
 
   .scroll-sigil {

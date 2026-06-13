@@ -192,6 +192,14 @@ setupHomeWheelSnap();
 
 if ("serviceWorker" in navigator && /^https?:$/.test(window.location.protocol)) {
   window.addEventListener("load", () => {
+    const isLocalPreview = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+    if (isLocalPreview) {
+      navigator.serviceWorker.getRegistrations?.().then((registrations) => {
+        registrations.forEach((registration) => registration.unregister());
+      });
+      return;
+    }
+
     const workerUrl = new URL("sw.js", siteScript?.src || window.location.href);
     navigator.serviceWorker.register(workerUrl, { scope: new URL("./", workerUrl).pathname }).catch(() => {
       // The site still works when a preview server does not expose a root worker.
