@@ -142,3 +142,29 @@ UAssetManager::Get().UnloadPrimaryAsset(ItemId);
   ```
 
 * Bundle 用来表达“同一个 Primary Asset 在不同使用场景下要加载哪些附属资源”。重点是表达加载意图，上文已经说过了。
+
+
+
+## PrimaryAssetLabel
+
+现在我们有了一批DA作为节点，用来管理一组资产关系，而`PrimaryAssetLabel`其也是一个资产，它的作用是专门给资产打上管理标签，以便给Asset Manager/Cook/Chunk进行分包的。简单来说，它表达了哪些资产归它管理、Cook规则是什么、应该放进哪个Chunk、是否包含递归依赖等等。
+
+* 强制一些资源被Cook：例如一些动态加载的资源，普通应用链里找不到，可以直接标出来然后设置Cook Rule = Always Cook
+* 资源分包/DLC/Pak Chunk等：例如可以分成Chunk 0：资源包、Chunk 1:武器资源、Chunk 2:角色皮肤。通过Label给某批资源设置Chunk ID
+
+
+
+还是以上面这个例子，我们直接在/Game/Data/Items目录下创建一个`PrimaryAssetLabel`，命名为PAL_Weapon，然后像如下配置
+
+![image-20260614113423270](./assets/image-20260614113423270.png)
+
+* Chunk ID填1，就是它管理的资源都进Chunk 1包。
+* Label Assets in My Directory： 勾上后，会标记这个 Label 所在文件夹及子文件夹里的资源。
+* Apply Recursively : 是否递归应用到依赖资源
+* Cook Rule ： 是否强制 Cook
+
+我们可以在RefrenceViewer里打开Show Manager References，就可以看到资产管理的引用关系，也可以在Asset Audit里看更详细的信息。
+
+![image-20260614113817975](./assets/image-20260614113817975.png)
+
+当然如何分包管理资源是另一个更系统也更需要实际落地经验的活，这里暂时就介绍到这里。
