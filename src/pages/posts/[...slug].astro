@@ -15,7 +15,7 @@ const tocHeadings = post.headings;
 const rootPrefix = "../".repeat(post.slug.split("/").length);
 ---
 
-<SiteLayout title={post.title} description={post.summary} current="note" prefix={rootPrefix}>
+<SiteLayout title={post.title} description={post.summary} current="note" prefix={rootPrefix} bodyClass="plain-content-page">
   <main class="article-page site-shell">
     <a class="text-link article-back" href={`${rootPrefix}articles.html`}>BACK TO ARTICLES</a>
     <div class="article-shell">

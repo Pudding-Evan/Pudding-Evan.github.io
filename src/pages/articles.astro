@@ -16,7 +16,7 @@ const groupedPosts = tags.map((tag) => ({
 }));
 ---
 
-<SiteLayout title="NOTE" description="Elysium notes and development articles." current="note">
+<SiteLayout title="NOTE" description="Elysium notes and development articles." current="note" bodyClass="plain-content-page">
   <main class="site-shell">
     <section class="page-intro">
       <p class="eyebrow">01 / Archive</p>
@@ -39,7 +39,6 @@ const groupedPosts = tags.map((tag) => ({
                       <a class="note-link-row" data-tag={tagFilterValue(post.tag)} href={`posts/${post.slug}.html`}>
                         <time class="note-link-date" datetime={post.date}>[{displayDate(post.date)}]</time>
                         <span class="note-link-title">{post.title}</span>
-                        <span class="note-link-summary">{post.summary}</span>
                       </a>
                     ))
                   }
@@ -49,7 +48,6 @@ const groupedPosts = tags.map((tag) => ({
           }
         </div>
         <aside class="tag-panel" aria-label="按 Tag 筛选文章">
-          <p class="tag-panel-title">Tag</p>
           <nav class="tag-filter">
             <a href="articles.html" data-tag-filter="all" aria-pressed="true">All</a>
             {tags.map((tag) => <a href={`articles.html?tag=${tagFilterValue(tag)}`} data-tag-filter={tagFilterValue(tag)} aria-pressed="false">{tag}</a>)}
