@@ -3,10 +3,20 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 import { displayDate, getAllArticles, tagFilterValue } from "../lib/content";
 
 const posts = getAllArticles();
-const tags = [...new Map(posts.map((post) => [post.tag.toLowerCase(), post.tag])).values()];
+const tagOrder = ["Note", "Gameplay"];
+const tags = [
+  ...tagOrder.filter((tag) => posts.some((post) => post.tag.toLowerCase() === tag.toLowerCase())),
+  ...[...new Map(posts.map((post) => [post.tag.toLowerCase(), post.tag])).values()].filter(
+    (tag) => !tagOrder.some((orderedTag) => orderedTag.toLowerCase() === tag.toLowerCase())
+  )
+];
+const groupedPosts = tags.map((tag) => ({
+  tag,
+  posts: posts.filter((post) => post.tag.toLowerCase() === tag.toLowerCase())
+}));
 ---
 
-<SiteLayout title="NOTE" description="Elysium notes and development articles." current="note">
+<SiteLayout title="NOTE" description="Elysium notes and development articles." current="note" bodyClass="archive-page">
   <main class="site-shell">
     <section class="page-intro">
       <p class="eyebrow">01 / Archive</p>
@@ -15,22 +25,29 @@ const tags = [...new Map(posts.map((post) => [post.tag.toLowerCase(), post.tag])
     </section>
     <section class="article-browser" data-article-browser aria-label="文章列表">
       <div class="article-layout">
-        <div class="note-list">
+        <div class="note-archive-card">
           {
-            posts.map((post) => (
-              <a class="note-card" data-tag={tagFilterValue(post.tag)} href={`posts/${post.slug}.html`}>
-                <div class="note-card-copy">
-                  <span class="note-card-tag">{post.tag}</span>
-                  <h2>{post.title}</h2>
-                  <p>{post.summary}</p>
-                  <time class="archive-date" datetime={post.date}>{displayDate(post.date)}</time>
+            groupedPosts.map((group) => (
+              <section class="note-group" data-article-group={tagFilterValue(group.tag)} aria-labelledby={`note-group-${tagFilterValue(group.tag)}`}>
+                <div class="note-group-heading">
+                  <h2 id={`note-group-${tagFilterValue(group.tag)}`}>{group.tag}</h2>
+                  <span>{group.posts.length.toString().padStart(2, "0")}</span>
                 </div>
-              </a>
+                <div class="note-link-list">
+                  {
+                    group.posts.map((post) => (
+                      <a class="note-link-row" data-tag={tagFilterValue(post.tag)} href={`posts/${post.slug}.html`}>
+                        <time class="note-link-date" datetime={post.date}>[{displayDate(post.date)}]</time>
+                        <span class="note-link-title">{post.title}</span>
+                      </a>
+                    ))
+                  }
+                </div>
+              </section>
             ))
           }
         </div>
         <aside class="tag-panel" aria-label="按 Tag 筛选文章">
-          <p class="tag-panel-title">Tag</p>
           <nav class="tag-filter">
             <a href="articles.html" data-tag-filter="all" aria-pressed="true">All</a>
             {tags.map((tag) => <a href={`articles.html?tag=${tagFilterValue(tag)}`} data-tag-filter={tagFilterValue(tag)} aria-pressed="false">{tag}</a>)}
