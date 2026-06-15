@@ -41,6 +41,11 @@ function setupArticleTagFilter() {
       if (visible) visibleCount += 1;
     });
 
+    browser.querySelectorAll("[data-article-group]").forEach((group) => {
+      const groupRows = Array.from(group.querySelectorAll("[data-tag], [data-tags]"));
+      group.hidden = groupRows.length > 0 && groupRows.every((row) => row.hidden);
+    });
+
     if (empty) {
       empty.hidden = visibleCount > 0;
     }

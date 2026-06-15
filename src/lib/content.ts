@@ -45,10 +45,11 @@ const postModules = import.meta.glob("../../posts/*/*/*.md", {
 }) as Record<string, MarkdownModule>;
 
 const categoryLabels: Record<string, string> = {
-  dev: "Dev",
+  asset: "Note",
+  dev: "Note",
   gameplay: "Gameplay",
-  gas: "GAS",
-  net: "Net"
+  gas: "Note",
+  net: "Note"
 };
 
 function splitMarkdownTableRow(line: string): string[] {
@@ -213,7 +214,7 @@ export function getAllArticles(): Article[] {
   return sortByDate(posts);
 }
 
-export function getHomeArticles(tag = "GAS"): Article[] {
+export function getHomeArticles(tag = "Note"): Article[] {
   return sortByOrder(getAllArticles().filter((post) => post.tag.toLowerCase() === tag.toLowerCase()));
 }
 
