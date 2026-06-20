@@ -42,6 +42,10 @@ GDC上有一篇关于如何在虚幻5引擎里保持60帧的演讲，详细讲�
 
   数据导向的Entity系统。核心思路在于，在不创建大量Actor/UObject的情况下，高效模拟大量的游戏对象，例如人群，车辆、动物或者是简单的NPC。接近ECS的设计思路，并非是传统的Actor驱动逻辑。
 
+- **Smart Object**
+
+  世界交互点描述框架。用来把场景中对象或位置声明成可以被AI、Mass Entity或者其他Gameplay系统查询和交互的资源。简单说就是声明"这个位置能提供什么行为"，一个Smort Obeject可以提供多个Slot，每个Slot可以描述一个可占用的位置和对应行为。例如椅子可以坐下，掩体可以蹲伏，门可以打开，工作台可以制作等等。
+
 - **Instanced Actors**
 
   分层实体表达方式。Hydration是把一个轻量的Entity / Instance 升级为一个真正的Actor，而Dehydration则是把Actor降级为轻量的Entity / Instance，Actor可以按需实体化。大量原本是Actor、可能需要进行交互的对象，在远离玩家或者不重要时，切换成Mass Entity，在靠近玩家时恢复成完整的Gameplay对象。这个和FastGeo有点像，但是FastGeo处理的主要是大量不可变的静态几何
