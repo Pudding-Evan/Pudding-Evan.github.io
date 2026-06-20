@@ -40,17 +40,9 @@ const root = process.cwd();
 const articleSource = path.join(root, "content", "articles.md");
 const videoSource = path.join(root, "content", "videos.md");
 
-const postModules = import.meta.glob("../../posts/*/*/*.md", {
+const postModules = import.meta.glob("../../posts/**/*.md", {
   eager: true
 }) as Record<string, MarkdownModule>;
-
-const categoryLabels: Record<string, string> = {
-  asset: "Note",
-  dev: "Note",
-  gameplay: "Gameplay",
-  gas: "Note",
-  net: "Note"
-};
 
 function splitMarkdownTableRow(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
@@ -113,10 +105,6 @@ function postSourceInfo(modulePath: string): {
     fileStem,
     sourceName
   };
-}
-
-function categoryTag(category: string): string {
-  return categoryLabels[category.toLowerCase()] ?? category;
 }
 
 function slugify(value: string): string {
@@ -189,7 +177,7 @@ export function getAllArticles(): Article[] {
       const raw = mod.rawContent?.() ?? "";
       const title = fileStem;
       const date = row.date || textValue(frontmatter.date) || "2026-01-01";
-      const tag = categoryTag(category);
+      const tag = category;
       const summary = row.summary || textValue(frontmatter.summary) || firstParagraph(raw);
       const orderValue = row["顺序"] || row.order || textValue(frontmatter.order);
       const order = /^\d+$/.test(orderValue) ? Number(orderValue) : undefined;

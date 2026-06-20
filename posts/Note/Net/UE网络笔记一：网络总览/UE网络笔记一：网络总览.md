@@ -377,7 +377,7 @@ void UChannel::ReceivedRawBunch(FInBunch& Bunch, bool& bOutSkipAck)
 - 这段逻辑的核心操作在于，Reliable Bunch 必须按 Channel 内的可靠序号严格顺序处理；非 Reliable Bunch 可以直接处理。如果当前接受到的Reliable Bunch乱序，会插入到`InRec`中 。`InRec`本质是已经收到，但暂时不能处理的Reliable Bunch队列。它缓存乱序到达的Reliable Bunch，等缺失的Reliable Bunch到达后，再按顺序释放处理。
 - 另一个问题是：什么情况下Bunch会被标记为Reliable呢？简单来说，网络层要求必须到达，且按顺序处理的Channel数据包，都会被标记为Reliable Bunch。例如Reliable的RPC，除此之外，像是连接握手、加载地图、NetGUID等控制信息、一些可靠传输的ActorChannel数据，都有可能通过Reliable Bunch发送，所以说，Reliable RPC 是 Reliable Bunch 的典型来源，但 Reliable Bunch 不只来自 RPC。
 
-### `UChannel::**ReceivedNextBunch**`
+### `UChannel::ReceivedNextBunch`
 
 简单来说，**`ReceivedNextBunch`** 会处理Partical Bunch的拼接，拼接完整后再交给具体的Channel。
 
