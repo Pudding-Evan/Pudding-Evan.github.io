@@ -1,3 +1,12 @@
+---
+date: 2026-05-29
+tags:
+  - "Note"
+  - "GAS"
+summary: "GameplayEffect"
+order: 2
+---
+
 # GAS设计解析二：GameplayEffect
 
 上一篇说到，Attribute 的修改通常应该通过 GameplayEffect 进入系统。这一篇就看 GE 本身。GE 是 GAS 中最容易被误解的对象之一，因为它既能改属性，也能授予 Tag、授予 Ability、表达 Cost 和 Cooldown。它本质是一个数据化的配置，最终影响效果如何作用到 ASC 上。

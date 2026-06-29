@@ -21,7 +21,7 @@ const rootPrefix = "../".repeat(post.slug.split("/").length);
     <div class="article-shell">
       <article class="article">
         <div class="meta">
-          <a class="meta-tag" href={`${rootPrefix}articles.html?tag=${tagFilterValue(post.tag)}`}>{post.tag}</a>
+          {post.tags.map((tag) => <a class="meta-tag" href={`${rootPrefix}articles.html?tag=${encodeURIComponent(tagFilterValue(tag))}`}>{tag}</a>)}
           <span>{displayDate(post.date)}</span>
           <span>{post.readMinutes} MIN READ</span>
         </div>

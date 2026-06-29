@@ -20,6 +20,9 @@ export type Article = {
   title: string;
   date: string;
   tag: string;
+  tags: string[];
+  month: string;
+  monthLabel: string;
   summary: string;
   order?: number;
   readMinutes: number;
@@ -97,7 +100,7 @@ function postSourceInfo(modulePath: string): {
   const normalized = modulePath.replace(/\\/g, "/");
   const sourceName = normalized.replace(/^.*?posts\//, "");
   const parts = sourceName.split("/");
-  const category = parts[0] || "Dev";
+  const category = parts[0] || "Note";
   const fileStem = path.posix.basename(sourceName).replace(/\.md$/i, "");
 
   return {
@@ -122,8 +125,84 @@ function displayDate(value: string): string {
   return value.replaceAll("-", ".");
 }
 
+function displayMonth(value: string): string {
+  return value.replace("-", ".");
+}
+
 function textValue(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  return "";
+}
+
+function listValue(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => listValue(item));
+  }
+
+  if (typeof value !== "string") return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  const inlineList = trimmed.match(/^\[(.*)\]$/)?.[1] ?? trimmed;
+  return inlineList
+    .split(/[,，|/]+/)
+    .map((item) => item.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean);
+}
+
+function uniqueValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  for (const value of values) {
+    const normalized = value.trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(normalized);
+  }
+
+  return unique;
+}
+
+function fallbackTags(sourceName: string, category: string): string[] {
+  const parts = sourceName.split("/").filter(Boolean);
+  if (/^\d{4}-\d{2}$/.test(parts[0] ?? "")) return ["Note"];
+  return [category || "Note"];
+}
+
+function dateValue(value: unknown): string {
+  if (typeof value === "string") return value.trim().slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+
+  if (value && typeof value === "object") {
+    const iso = (value as { toISOString?: () => string }).toISOString;
+    if (typeof iso === "function") {
+      try {
+        return iso.call(value).slice(0, 10);
+      } catch {
+        // Fall through to string parsing.
+      }
+    }
+  }
+
+  const text = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
+function normalizeDate(value: string): string {
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "2026-01-01";
+}
+
+function monthFromDate(date: string): string {
+  return date.match(/^\d{4}-\d{2}/)?.[0] ?? "2026-01";
 }
 
 function firstParagraph(markdown: string): string {
@@ -150,14 +229,6 @@ function sortByDate(posts: Article[]): Article[] {
   return [...posts].sort((a, b) => `${b.date}-${b.slug}`.localeCompare(`${a.date}-${a.slug}`));
 }
 
-function sortByOrder(posts: Article[]): Article[] {
-  const ordered = posts
-    .filter((post) => post.order !== undefined)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.date.localeCompare(b.date));
-  const unordered = sortByDate(posts.filter((post) => post.order === undefined));
-  return [...ordered, ...unordered];
-}
-
 export function tagFilterValue(tag: string): string {
   return slugify(tag).toLowerCase();
 }
@@ -175,14 +246,21 @@ export function getAllArticles(): Article[] {
         {};
       const frontmatter = mod.frontmatter ?? {};
       const raw = mod.rawContent?.() ?? "";
-      const title = fileStem;
-      const date = row.date || textValue(frontmatter.date) || "2026-01-01";
-      const tag = category;
-      const summary = row.summary || textValue(frontmatter.summary) || firstParagraph(raw);
-      const orderValue = row["顺序"] || row.order || textValue(frontmatter.order);
+      const title = textValue(frontmatter.title) || fileStem;
+      const date = normalizeDate(dateValue(frontmatter.date) || row.date || "2026-01-01");
+      const frontmatterTags = uniqueValues([...listValue(frontmatter.tags), ...listValue(frontmatter.tag)]);
+      const rowTags = uniqueValues([...listValue(row.tags), ...listValue(row.tag)]);
+      const tags = uniqueValues([
+        ...(frontmatterTags.length ? frontmatterTags : rowTags),
+        ...(!frontmatterTags.length && !rowTags.length ? fallbackTags(sourceName, category) : [])
+      ]);
+      const tag = tags[0] || "Note";
+      const month = monthFromDate(date);
+      const summary = textValue(frontmatter.summary) || row.summary || firstParagraph(raw);
+      const orderValue = textValue(frontmatter.order) || row["顺序"] || row.order;
       const order = /^\d+$/.test(orderValue) ? Number(orderValue) : undefined;
       const headings = (mod.getHeadings?.() ?? []).filter((heading) => heading.depth >= 2 && heading.depth <= 3);
-      const slug = `${slugify(category)}/${slugify(textValue(frontmatter.slug) || fileStem)}`;
+      const slug = `${slugify(month)}/${slugify(textValue(frontmatter.slug) || fileStem)}`;
 
       return {
         slug,
@@ -190,6 +268,9 @@ export function getAllArticles(): Article[] {
         title,
         date,
         tag,
+        tags,
+        month,
+        monthLabel: displayMonth(month),
         summary,
         order,
         readMinutes: estimateReadMinutes(raw),
@@ -203,7 +284,8 @@ export function getAllArticles(): Article[] {
 }
 
 export function getHomeArticles(tag = "Note"): Article[] {
-  return sortByOrder(getAllArticles().filter((post) => post.tag.toLowerCase() === tag.toLowerCase()));
+  const normalizedTag = tag.toLowerCase();
+  return sortByDate(getAllArticles().filter((post) => post.tags.some((item) => item.toLowerCase() === normalizedTag)));
 }
 
 function parseBvid(value: string): string {
@@ -240,4 +322,4 @@ export function getFeaturedVideos(limit = 2): Video[] {
   return (featured.length ? featured : videos).slice(0, limit);
 }
 
-export { displayDate };
+export { displayDate, displayMonth };

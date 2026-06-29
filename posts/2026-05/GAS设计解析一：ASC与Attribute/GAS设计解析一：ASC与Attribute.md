@@ -1,3 +1,12 @@
+---
+date: 2026-05-29
+tags:
+  - "Note"
+  - "GAS"
+summary: "ASC 与 Attribute"
+order: 1
+---
+
 # GAS设计解析一：ASC与Attribute
 
 GAS 是虚幻引擎的一套可扩展技能框架。它主要包含几类内容：

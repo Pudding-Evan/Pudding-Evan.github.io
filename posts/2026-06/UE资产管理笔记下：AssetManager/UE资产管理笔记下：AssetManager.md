@@ -1,3 +1,12 @@
+---
+date: 2026-06-13
+tags:
+  - "Note"
+  - "Asset"
+summary: "资产管理解析"
+order: 2
+---
+
 # UE资产管理笔记下：AssetManager
 
 这篇主要是介绍UE里有这个AssetManager可以进行资产管理，也是UE推荐的，对Primary Asset进行资产管理的主要方式，但对于实现上就不做过多探究了。

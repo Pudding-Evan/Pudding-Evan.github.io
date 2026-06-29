@@ -1,3 +1,12 @@
+---
+date: 2026-05-30
+tags:
+  - "Note"
+  - "GAS"
+summary: "GE 属性修改案例"
+order: 3
+---
+
 # GAS设计解析三：GE属性修改案例
 
 上一篇章提到 GE 对属性进行修改的两大方式：Modifier 与 Execution。其中 Modifier 又有四种 Magnitude 计算方式。这一偏结合实际项目案例，分别说明它们是如何运作的。

@@ -1,3 +1,12 @@
+---
+date: 2026-05-31
+tags:
+  - "Note"
+  - "GAS"
+summary: "GameplayAbility 与 GameplayTag"
+order: 4
+---
+
 # GAS设计解析四：GA与GameplayTag
 
 GameplayAbility是真正承载“技能业务流程”的对象。如果说 ASC 是技能系统的中枢，Attribute 是被修改的数据，GameplayEffect 是对 ASC 产生影响的数据化效果，那么 GameplayAbility 就是“什么时候检查、什么时候启动、什么时候播放动作、什么时候提交消耗、什么时候应用 GE、什么时候等待输入、什么时候结束”的业务载体。例如，一个火球术通常是一段 Ability 流程：检查蓝量和冷却，播放施法动画，等待命中或目标数据，然后对目标应用伤害 GE，再应用自身冷却 GE，最后结束 Ability。GE 只是这条流程中被应用出去的效果。

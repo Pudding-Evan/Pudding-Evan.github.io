@@ -1,6 +1,15 @@
+---
+date: 2026-06-28
+tags:
+  - "Note"
+  - "TagName"
+summary: "一句话摘要"
+order: 1
+---
+
 # 文章标题
 
-正文第一段从这里开始。建议第一段直接说明这篇文章要解决什么问题，或者给读者一个进入文章的上下文。文章分类由 `posts/Note/` 或 `posts/Gameplay/` 顶层目录决定，外部显示标题来自 Markdown 文件名，日期、摘要和顺序维护在 `content/articles.md`。
+正文第一段从这里开始。建议第一段直接说明这篇文章要解决什么问题，或者给读者一个进入文章的上下文。新文章放在 `posts/YYYY-MM/文章标题/文章标题.md`，文章分类写在本文件的 `tags` 中。
 
 ![图片说明](./images/example.png)
 

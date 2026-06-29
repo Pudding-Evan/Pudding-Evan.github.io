@@ -4,7 +4,7 @@ import path from "node:path";
 const root = process.cwd();
 const postsDir = path.join(root, "posts");
 const articleIndex = path.join(root, "content", "articles.md");
-const columns = ["file", "date", "summary", "order"];
+const columns = ["file", "date", "tags", "summary", "order"];
 
 function toPosix(value) {
   return value.replace(/\\/g, "/");
@@ -31,6 +31,25 @@ function escapeCell(value) {
   return String(value ?? "").replace(/\|/g, "\\|").trim();
 }
 
+function parseListValue(value) {
+  if (Array.isArray(value)) return value.flatMap((item) => parseListValue(item));
+  if (typeof value !== "string") return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  const inlineList = trimmed.match(/^\[(.*)\]$/)?.[1] ?? trimmed;
+  return inlineList
+    .split(/[,，|/]+/)
+    .map((item) => item.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean);
+}
+
+function stringifyValue(value) {
+  if (Array.isArray(value)) return value.join(", ");
+  return value ?? "";
+}
+
 async function readExistingIndex() {
   try {
     const content = await readFile(articleIndex, "utf-8");
@@ -48,6 +67,7 @@ async function readExistingIndex() {
       return {
         file: data.file || data.path || data.source || "",
         date: data.date || "",
+        tags: data.tags || data.tag || "",
         summary: data.summary || "",
         order: data.order || data["顺序"] || "",
         index
@@ -64,18 +84,32 @@ function parseFrontmatter(markdown) {
   if (!match) return {};
 
   const result = {};
+  let activeListKey = "";
+
   for (const line of match[1].split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
+    if (activeListKey && trimmed.startsWith("- ")) {
+      result[activeListKey].push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ""));
+      continue;
+    }
+
+    activeListKey = "";
     const separator = trimmed.indexOf(":");
     if (separator === -1) continue;
 
     const key = trimmed.slice(0, separator).trim();
     const rawValue = trimmed.slice(separator + 1).trim();
-    const value = rawValue.replace(/^['"]|['"]$/g, "");
+    const value = rawValue.replace(/^["']|["']$/g, "");
+
     if (["date", "summary", "order"].includes(key)) {
       result[key] = value;
+    }
+
+    if (["tags", "tag"].includes(key)) {
+      result.tags = rawValue ? parseListValue(rawValue) : [];
+      activeListKey = rawValue ? "" : "tags";
     }
   }
 
@@ -123,7 +157,8 @@ function buildLookup(existingRows) {
 }
 
 function rowValue(frontmatter, previous, key) {
-  return frontmatter[key] ?? previous?.[key] ?? "";
+  const value = key === "tags" ? frontmatter.tags : frontmatter[key];
+  return stringifyValue(value ?? previous?.[key] ?? "");
 }
 
 async function main() {
@@ -146,6 +181,7 @@ async function main() {
     rows.push({
       file: relativeToPosts,
       date: rowValue(frontmatter, previous, "date"),
+      tags: rowValue(frontmatter, previous, "tags"),
       summary: rowValue(frontmatter, previous, "summary"),
       order: rowValue(frontmatter, previous, "order"),
       index: previous?.index ?? Number.POSITIVE_INFINITY

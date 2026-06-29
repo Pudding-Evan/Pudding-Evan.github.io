@@ -1,3 +1,46 @@
+const styleStorageKey = "elysium-style";
+const siteStyles = new Set(["minimal", "ornate"]);
+
+function normalizeSiteStyle(style) {
+  return siteStyles.has(style) ? style : "minimal";
+}
+
+function currentSiteStyle() {
+  try {
+    return normalizeSiteStyle(localStorage.getItem(styleStorageKey) || document.documentElement.dataset.style);
+  } catch {
+    return normalizeSiteStyle(document.documentElement.dataset.style);
+  }
+}
+
+function applySiteStyle(style) {
+  const activeStyle = normalizeSiteStyle(style);
+  document.documentElement.dataset.style = activeStyle;
+  document.querySelectorAll("[data-style-choice]").forEach((control) => {
+    const isActive = control.dataset.styleChoice === activeStyle;
+    control.setAttribute("aria-pressed", String(isActive));
+  });
+  return activeStyle;
+}
+
+function setupStyleSwitch() {
+  const controls = Array.from(document.querySelectorAll("[data-style-choice]"));
+  if (!controls.length) return;
+
+  applySiteStyle(currentSiteStyle());
+  controls.forEach((control) => {
+    control.addEventListener("click", () => {
+      const nextStyle = applySiteStyle(control.dataset.styleChoice);
+      try {
+        localStorage.setItem(styleStorageKey, nextStyle);
+      } catch {
+        // The selected style still applies for this page when storage is unavailable.
+      }
+    });
+  });
+}
+
+setupStyleSwitch();
 const siteScript = document.currentScript;
 
 function normalizeArticleTag(tag) {
