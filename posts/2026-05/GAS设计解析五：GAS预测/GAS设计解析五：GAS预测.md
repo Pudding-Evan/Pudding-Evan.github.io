@@ -1,7 +1,6 @@
 ---
 date: 2026-05-31
 tags:
-  - "Note"
   - "GAS"
 summary: "GAS 预测"
 order: 5

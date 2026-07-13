@@ -1,6 +1,6 @@
 ---
 import SiteLayout from "../../layouts/SiteLayout.astro";
-import { displayDate, getAllArticles, tagFilterValue } from "../../lib/content";
+import { displayDate, getAllArticles, getCollectionArticles, getPublicArticles, tagFilterValue } from "../../lib/content";
 
 export function getStaticPaths() {
   return getAllArticles().map((post) => ({
@@ -13,19 +13,70 @@ const { post } = Astro.props;
 const Content = post.Content;
 const tocHeadings = post.headings;
 const rootPrefix = "../".repeat(post.slug.split("/").length);
+const allPosts = post.collection ? getCollectionArticles(post.collection) : getPublicArticles();
+const currentIndex = allPosts.findIndex((entry) => entry.slug === post.slug);
+const newerPost = currentIndex > 0 ? allPosts[currentIndex - 1] : undefined;
+const olderPost = currentIndex >= 0 ? allPosts[currentIndex + 1] : undefined;
+const relatedPosts = allPosts
+  .filter((entry) =>
+    entry.slug !== post.slug &&
+    (Boolean(post.collection) || entry.tags.some((tag) => post.tags.includes(tag)))
+  )
+  .sort((a, b) => b.tags.filter((tag) => post.tags.includes(tag)).length - a.tags.filter((tag) => post.tags.includes(tag)).length)
+  .slice(0, 3);
+const archiveHref = post.collection
+  ? `${rootPrefix}articles.html?category=${encodeURIComponent(tagFilterValue(post.collection))}`
+  : `${rootPrefix}articles.html`;
 ---
 
-<SiteLayout title={post.title} description={post.summary} current="note" prefix={rootPrefix} bodyClass="plain-content-page">
+<SiteLayout
+  title={post.title}
+  description={post.summary}
+  current="note"
+  prefix={rootPrefix}
+  bodyClass="plain-content-page"
+  interfaceStyle="minimal"
+  type="article"
+  publishedTime={post.date}
+  tags={post.collection ? [post.collection] : post.tags}
+>
   <main class="article-page site-shell">
-    <a class="text-link article-back" href={`${rootPrefix}articles.html`}>BACK TO ARTICLES</a>
+    <a class="text-link article-back" href={archiveHref}>BACK TO ARTICLES</a>
     <div class="article-shell">
       <article class="article">
         <div class="meta">
           {post.tags.map((tag) => <a class="meta-tag" href={`${rootPrefix}articles.html?tag=${encodeURIComponent(tagFilterValue(tag))}`}>{tag}</a>)}
           <span>{displayDate(post.date)}</span>
+          {post.collection && <a class="meta-tag" href={archiveHref}>{post.collection}</a>}
           <span>{post.readMinutes} MIN READ</span>
         </div>
         <Content />
+        <footer class="article-end">
+          <nav class="article-pagination" aria-label="相邻文章">
+            {newerPost ? (
+              <a href={`${rootPrefix}posts/${newerPost.slug}.html`}>
+                <span>← NEWER</span>
+                <strong>{newerPost.title}</strong>
+              </a>
+            ) : <span />}
+            {olderPost && (
+              <a class="article-pagination-next" href={`${rootPrefix}posts/${olderPost.slug}.html`}>
+                <span>OLDER →</span>
+                <strong>{olderPost.title}</strong>
+              </a>
+            )}
+          </nav>
+          {relatedPosts.length > 0 && (
+            <section class="related-notes" aria-labelledby="related-notes-title">
+              <h2 id="related-notes-title">继续阅读</h2>
+              <div>
+                {relatedPosts.map((entry) => (
+                  <a href={`${rootPrefix}posts/${entry.slug}.html`}>{entry.title}</a>
+                ))}
+              </div>
+            </section>
+          )}
+        </footer>
       </article>
       {tocHeadings.length > 0 && (
         <aside class="article-toc" aria-label="文章目录">

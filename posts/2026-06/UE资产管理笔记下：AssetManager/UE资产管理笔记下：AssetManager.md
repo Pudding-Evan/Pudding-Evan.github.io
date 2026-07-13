@@ -2,7 +2,6 @@
 date: 2026-06-13
 tags:
   - "Note"
-  - "Asset"
 summary: "资产管理解析"
 order: 2
 ---

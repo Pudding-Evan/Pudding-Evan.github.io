@@ -5,11 +5,12 @@ import { getVideos } from "../lib/content";
 const videos = getVideos();
 ---
 
-<SiteLayout title="Video" description="Elysium video records." current="video" bodyClass="plain-content-page">
+<SiteLayout title="视频记录" description="Evan 的游戏开发原型、技术验证与视频记录。" current="video" bodyClass="plain-content-page" interfaceStyle="ornate">
   <main class="site-shell">
     <section class="page-intro">
-      <p class="eyebrow">02 / Video</p>
-      <h1 class="pixel-title">Video</h1>
+      <p class="eyebrow">02 / BUILD CAPTURE</p>
+      <h1 class="pixel-title">视频记录</h1>
+      <p>把交互原型、技术验证和阶段成果留在这里，作为文字笔记之外的运行证据。</p>
     </section>
     <section class="switch-player-list archive-list" aria-label="视频列表">
       {
@@ -24,6 +25,7 @@ const videos = getVideos();
                     title={video.title}
                     allow="autoplay; fullscreen; picture-in-picture"
                     referrerpolicy="strict-origin-when-cross-origin"
+                    loading="lazy"
                     allowfullscreen
                   />
                 </div>

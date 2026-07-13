@@ -10,8 +10,10 @@ await mkdir(publicDir, { recursive: true });
 const copies = [
   ["assets", "assets"],
   ["styles.css", "styles.css"],
+  ["interface.css", "interface.css"],
   ["site.js", "site.js"],
   ["sw.js", "sw.js"],
+  ["favicon.svg", "favicon.svg"],
   [".nojekyll", ".nojekyll"]
 ];
 

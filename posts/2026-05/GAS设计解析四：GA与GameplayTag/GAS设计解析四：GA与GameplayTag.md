@@ -1,7 +1,6 @@
 ---
 date: 2026-05-31
 tags:
-  - "Note"
   - "GAS"
 summary: "GameplayAbility 与 GameplayTag"
 order: 4

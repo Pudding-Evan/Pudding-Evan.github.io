@@ -2,7 +2,6 @@
 date: 2026-06-12
 tags:
   - "Note"
-  - "Asset"
 summary: "资产管理解析"
 order: 1
 ---
@@ -128,7 +127,7 @@ Asset:   T_Icon
 
 FSoftObjectPath包含FTopLevelAssetPath AssetPath和FUtf8String SubPathString，是描述路径的底层结构。
 
-```C++
+```cpp
 struct FSoftObjectPath
 {
 private:
@@ -201,7 +200,7 @@ struct TSoftObjectPtr
 
 如果对象没加载时，它无法解析到，只有一个路径，是pending状态。
 
-```C++
+```cpp
 /**  
  * Test if this does not point to a live UObject, but may in the future
  * 
@@ -235,7 +234,7 @@ AssetRegistry是UE负责维护资产元数据和磁盘包里记录的依赖关�
 
 最重要的两个接口依赖查询接口如下
 
-```C++
+```cpp
 /**
  * Gets a list of AssetIdentifiers or FAssetDependencies that are referenced by the supplied AssetIdentifier.
  * Only returns dependencies reported in the on-disk package.
@@ -253,7 +252,7 @@ virtual bool GetReferencers(FName PackageName, TArray<FName>& OutReferencers, ..
 
 这里提到一个概念叫资产元数据，也就是`AssetData`，它是一个轻量资产描述，保存了资产的包名、路径、资产名等等信息，并不是一个已加载的UObject。通过`FAssetData::GetSoftObjectPath()`生成`FSoftObjectPath `
 
-```C++
+```cpp
 struct FAssetData
 {
 	/** The name of the package in which the asset is found, this is the full long package name such as /Game/Path/Package */
@@ -280,7 +279,7 @@ struct FAssetData
 
 加载系统负责把路径变成对象。最直接的同步加载，例如模板函数 `LoadObject<T>` ，其实是`StaticLoadObject`的包装
 
-```C++
+```cpp
 COREUOBJECT_API UObject* StaticLoadObject(
     UClass* Class,
     UObject* InOuter,
@@ -312,7 +311,7 @@ UTexture2D* Icon = LoadObject<UTexture2D>(
 
 FStreamableManager 管理的是 streaming assets 的加载请求、回调、句柄和保活。经常用作软引用加载，因为它的公开接口主要就是接收`FSoftObjectPath` / `TSoftObjectPtr` / `TSoftClassPtr` 这类路径目标。
 
-```C
+```cpp
 /**
  * A native class for managing streaming assets in and keeping them in memory.
  * AssetManager is the global singleton version of this with blueprint access
@@ -322,7 +321,7 @@ struct FStreamableManager : public FGCObject
 
 常用的异步加载可能这样写，底层调用的是LoadPackageAsync这样的异步加载接口。
 
-```C++
+```cpp
 FStreamableManager& Streamable = UAssetManager::GetStreamableManager();
 TSharedPtr<FStreamableHandle> Handle = Streamable.RequestAsyncLoad(
     IconPath,
@@ -572,7 +571,7 @@ UPrimaryDataAsset 继承自UDataAsset，是一个非常重要的派生类。这�
 
 简单来说，`PrimaryAssetType` 是理解为资产分类，代表的是一类资产。`PrimaryAssetId` 是则是某个 Primary Asset 的唯一身份标识。
 
-```C++
+```cpp
 USTRUCT(BlueprintType)
 struct FPrimaryAssetType
 {

@@ -1,50 +1,8 @@
-const styleStorageKey = "elysium-style";
-const siteStyles = new Set(["minimal", "ornate"]);
-
-function normalizeSiteStyle(style) {
-  return siteStyles.has(style) ? style : "minimal";
-}
-
-function currentSiteStyle() {
-  try {
-    return normalizeSiteStyle(localStorage.getItem(styleStorageKey) || document.documentElement.dataset.style);
-  } catch {
-    return normalizeSiteStyle(document.documentElement.dataset.style);
-  }
-}
-
-function applySiteStyle(style) {
-  const activeStyle = normalizeSiteStyle(style);
-  document.documentElement.dataset.style = activeStyle;
-  document.querySelectorAll("[data-style-choice]").forEach((control) => {
-    const isActive = control.dataset.styleChoice === activeStyle;
-    control.setAttribute("aria-pressed", String(isActive));
-  });
-  return activeStyle;
-}
-
-function setupStyleSwitch() {
-  const controls = Array.from(document.querySelectorAll("[data-style-choice]"));
-  if (!controls.length) return;
-
-  applySiteStyle(currentSiteStyle());
-  controls.forEach((control) => {
-    control.addEventListener("click", () => {
-      const nextStyle = applySiteStyle(control.dataset.styleChoice);
-      try {
-        localStorage.setItem(styleStorageKey, nextStyle);
-      } catch {
-        // The selected style still applies for this page when storage is unavailable.
-      }
-    });
-  });
-}
-
-setupStyleSwitch();
 const siteScript = document.currentScript;
 
+
 function normalizeArticleTag(tag) {
-  return (tag || "all").trim().toLowerCase();
+  return (tag || "").trim().toLowerCase();
 }
 
 function articleRowTags(row) {
@@ -58,66 +16,97 @@ function setupArticleTagFilter() {
   const browser = document.querySelector("[data-article-browser]");
   if (!browser) return;
 
-  const controls = Array.from(browser.querySelectorAll("[data-tag-filter]"));
+  const controls = Array.from(browser.querySelectorAll("[data-tag-filter], [data-category-filter]"));
   const rows = Array.from(browser.querySelectorAll("[data-tag], [data-tags]"));
   const empty = browser.querySelector("[data-archive-empty]");
   if (!controls.length || !rows.length) return;
 
   const availableTags = new Set(
-    controls.map((control) => normalizeArticleTag(control.dataset.tagFilter)),
+    controls
+      .filter((control) => control.hasAttribute("data-tag-filter"))
+      .map((control) => normalizeArticleTag(control.dataset.tagFilter)),
+  );
+  const availableCategories = new Set(
+    controls
+      .filter((control) => control.hasAttribute("data-category-filter"))
+      .map((control) => normalizeArticleTag(control.dataset.categoryFilter)),
   );
 
-  function applyFilter(nextTag, updateUrl) {
-    const requestedTag = normalizeArticleTag(nextTag);
-    const activeTag = availableTags.has(requestedTag) ? requestedTag : "all";
+  function filterFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const category = normalizeArticleTag(params.get("category"));
+    if (availableCategories.has(category)) return { type: "category", value: category };
+
+    const tag = normalizeArticleTag(params.get("tag"));
+    return { type: "tag", value: availableTags.has(tag) ? tag : "all" };
+  }
+
+  function applyFilter(nextFilter, updateUrl) {
+    const requestedType = nextFilter?.type === "category" ? "category" : "tag";
+    const requestedValue = normalizeArticleTag(nextFilter?.value);
+    const isAvailable = requestedType === "category"
+      ? availableCategories.has(requestedValue)
+      : availableTags.has(requestedValue);
+    const activeFilter = isAvailable
+      ? { type: requestedType, value: requestedValue }
+      : { type: "tag", value: "all" };
     let visibleCount = 0;
 
     controls.forEach((control) => {
-      const isActive = normalizeArticleTag(control.dataset.tagFilter) === activeTag;
+      const controlType = control.hasAttribute("data-category-filter") ? "category" : "tag";
+      const controlValue = normalizeArticleTag(
+        controlType === "category" ? control.dataset.categoryFilter : control.dataset.tagFilter,
+      );
+      const isActive = controlType === activeFilter.type && controlValue === activeFilter.value;
       control.setAttribute("aria-pressed", String(isActive));
       control.classList.toggle("is-active", isActive);
     });
 
     rows.forEach((row) => {
-      const visible = activeTag === "all" || articleRowTags(row).includes(activeTag);
+      const collection = normalizeArticleTag(row.dataset.collection || "");
+      const visible = activeFilter.type === "category"
+        ? collection === activeFilter.value
+        : !collection && (activeFilter.value === "all" || articleRowTags(row).includes(activeFilter.value));
       row.hidden = !visible;
       if (visible) visibleCount += 1;
     });
 
     browser.querySelectorAll("[data-article-group]").forEach((group) => {
       const groupRows = Array.from(group.querySelectorAll("[data-tag], [data-tags]"));
-      group.hidden = groupRows.length > 0 && groupRows.every((row) => row.hidden);
+      const groupVisibleCount = groupRows.filter((row) => !row.hidden).length;
+      group.hidden = groupVisibleCount === 0;
+      const count = group.querySelector("[data-group-count]");
+      if (count) count.textContent = String(groupVisibleCount).padStart(2, "0");
     });
 
-    if (empty) {
-      empty.hidden = visibleCount > 0;
-    }
+    if (empty) empty.hidden = visibleCount > 0;
 
     if (updateUrl) {
       const url = new URL(window.location.href);
-      if (activeTag === "all") {
-        url.searchParams.delete("tag");
-      } else {
-        url.searchParams.set("tag", activeTag);
+      url.searchParams.delete("tag");
+      url.searchParams.delete("category");
+      if (activeFilter.type === "category") {
+        url.searchParams.set("category", activeFilter.value);
+      } else if (activeFilter.value !== "all") {
+        url.searchParams.set("tag", activeFilter.value);
       }
-      window.history.pushState({ tag: activeTag }, "", url);
+      window.history.pushState(activeFilter, "", url);
     } else {
-      window.history.replaceState({ tag: activeTag }, "", window.location.href);
+      window.history.replaceState(activeFilter, "", window.location.href);
     }
   }
 
   browser.addEventListener("click", (event) => {
-    const control = event.target?.closest?.("[data-tag-filter]");
+    const control = event.target?.closest?.("[data-tag-filter], [data-category-filter]");
     if (!control || !browser.contains(control)) return;
     event.preventDefault();
-    applyFilter(control.dataset.tagFilter, true);
+    const type = control.hasAttribute("data-category-filter") ? "category" : "tag";
+    const value = type === "category" ? control.dataset.categoryFilter : control.dataset.tagFilter;
+    applyFilter({ type, value }, true);
   });
 
-  window.addEventListener("popstate", () => {
-    applyFilter(new URLSearchParams(window.location.search).get("tag"), false);
-  });
-
-  applyFilter(new URLSearchParams(window.location.search).get("tag"), false);
+  window.addEventListener("popstate", () => applyFilter(filterFromUrl(), false));
+  applyFilter(filterFromUrl(), false);
 }
 
 setupArticleTagFilter();
@@ -236,7 +225,7 @@ function setupHomeWheelSnap() {
   );
 }
 
-setupHomeWheelSnap();
+// Native free scrolling keeps reading behavior predictable across both themes.
 
 if ("serviceWorker" in navigator && /^https?:$/.test(window.location.protocol)) {
   window.addEventListener("load", () => {

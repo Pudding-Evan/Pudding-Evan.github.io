@@ -1,0 +1,72 @@
+---
+interface Props {
+  title?: string;
+  description?: string;
+  current?: "note" | "video" | "about" | "";
+  prefix?: string;
+  htmlClass?: string;
+  bodyClass?: string;
+}
+
+const {
+  title = "Elysium",
+  description = "Elysium personal notes and videos.",
+  current = "",
+  prefix = "",
+  htmlClass = "",
+  bodyClass = ""
+} = Astro.props;
+
+const pageTitle = title === "Elysium" ? "Elysium" : `${title} | Elysium`;
+---
+
+<!doctype html>
+<html class={htmlClass || undefined} lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content={description}>
+    <title>{pageTitle}</title>
+    <script is:inline>
+      (() => {
+        try {
+          const savedStyle = localStorage.getItem("elysium-style");
+          document.documentElement.dataset.style = savedStyle === "ornate" ? "ornate" : "minimal";
+        } catch {
+          document.documentElement.dataset.style = "minimal";
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href={`${prefix}styles.css`}>
+    <script src={`${prefix}site.js`} defer></script>
+  </head>
+  <body class={bodyClass || undefined}>
+    <header class="site-header">
+      <nav class="nav site-shell" aria-label="主导航">
+        <a class="brand" href={`${prefix}index.html`} aria-label="Elysium 首页">
+          <span class="brand-mark" aria-hidden="true">E</span>
+          <span class="brand-word" aria-hidden="true">ELYSIUM</span>
+        </a>
+        <div class="nav-controls">
+          <div class="nav-links">
+            <a href={`${prefix}articles.html`} aria-current={current === "note" ? "page" : undefined}>NOTE</a>
+            <a href={`${prefix}videos.html`} aria-current={current === "video" ? "page" : undefined}>VIDEO</a>
+            <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a>
+          </div>
+          <div class="style-switch" role="group" aria-label="风格切换">
+            <button type="button" data-style-choice="minimal" aria-pressed="true">极简</button>
+            <button type="button" data-style-choice="ornate" aria-pressed="false">华丽</button>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <slot />
+
+    <footer class="site-footer">
+      <div class="footer-inner site-shell">
+        <span>© 2026 Elysium</span>
+      </div>
+    </footer>
+  </body>
+</html>

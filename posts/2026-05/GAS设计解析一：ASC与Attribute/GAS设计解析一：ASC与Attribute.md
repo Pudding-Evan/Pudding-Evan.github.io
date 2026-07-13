@@ -1,7 +1,6 @@
 ---
 date: 2026-05-29
 tags:
-  - "Note"
   - "GAS"
 summary: "ASC 与 Attribute"
 order: 1

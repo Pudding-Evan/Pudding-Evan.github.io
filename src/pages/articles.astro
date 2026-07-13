@@ -1,21 +1,10 @@
 ---
 import SiteLayout from "../layouts/SiteLayout.astro";
-import { displayDate, getAllArticles, tagFilterValue } from "../lib/content";
+import { ARTICLE_COLLECTIONS, displayDate, getAllArticles, getPublicArticles, tagFilterValue } from "../lib/content";
 
 const posts = getAllArticles();
-const tagOrder = ["Note", "Gameplay", "GAS", "Net", "Asset", "UE5", "U++"];
-const tagMap = new Map<string, string>();
-for (const post of posts) {
-  for (const tag of post.tags) {
-    tagMap.set(tag.toLowerCase(), tag);
-  }
-}
-const tags = [
-  ...tagOrder.filter((tag) => tagMap.has(tag.toLowerCase())),
-  ...[...tagMap.values()].filter(
-    (tag) => !tagOrder.some((orderedTag) => orderedTag.toLowerCase() === tag.toLowerCase())
-  )
-];
+const publicPosts = getPublicArticles();
+const tags = ["Note", "GAS", "Net"].filter((tag) => publicPosts.some((post) => post.tags.includes(tag)));
 const groupedPosts = [...new Map(posts.map((post) => [post.month, post.monthLabel])).entries()].map(([month, label]) => ({
   month,
   label,
@@ -23,31 +12,37 @@ const groupedPosts = [...new Map(posts.map((post) => [post.month, post.monthLabe
 }));
 ---
 
-<SiteLayout title="NOTE" description="Elysium notes and development articles." current="note" bodyClass="plain-content-page">
+<SiteLayout title="开发笔记" description="Evan 的 Unreal Engine、Gameplay、GAS 与游戏开发文章。" current="note" bodyClass="plain-content-page" interfaceStyle="minimal">
   <main class="site-shell">
     <section class="page-intro">
-      <p class="eyebrow">01 / Timeline</p>
-      <h1 class="pixel-title">NOTE</h1>
+      <p class="eyebrow">01 / KNOWLEDGE LOG</p>
+      <h1 class="pixel-title">开发笔记</h1>
     </section>
     <section class="article-browser" data-article-browser aria-label="文章列表">
       <div class="article-layout">
         <div class="note-archive-card">
           {
             groupedPosts.map((group) => (
-              <section class="note-group" data-article-group={group.month} aria-labelledby={`note-group-${group.month}`}>
+              <section class="note-group" data-article-group={group.month} aria-labelledby={`note-group-${group.month}`} hidden={group.posts.every((post) => Boolean(post.collection))}>
                 <div class="note-group-heading">
                   <h2 id={`note-group-${group.month}`}>{group.label}</h2>
-                  <span>{group.posts.length.toString().padStart(2, "0")}</span>
+                  <span data-group-count>{group.posts.filter((post) => !post.collection).length.toString().padStart(2, "0")}</span>
                 </div>
                 <div class="note-link-list">
                   {
                     group.posts.map((post) => (
-                      <a class="note-link-row" data-tags={post.tags.map(tagFilterValue).join(" ")} href={`posts/${post.slug}.html`}>
+                      <a
+                        class="note-link-row"
+                        data-tags={post.tags.map(tagFilterValue).join(" ")}
+                        data-collection={post.collection ? tagFilterValue(post.collection) : undefined}
+                        href={`posts/${post.slug}.html`}
+                        hidden={Boolean(post.collection)}
+                      >
                         <time class="note-link-date" datetime={post.date}>[{displayDate(post.date)}]</time>
                         <span class="note-link-main">
                           <span class="note-link-title">{post.title}</span>
                           <span class="note-link-tags" aria-label="文章标签">
-                            {post.tags.map((tag) => <span>{tag}</span>)}
+                            {(post.collection ? [post.collection] : post.tags).map((tag) => <span>{tag}</span>)}
                           </span>
                         </span>
                       </a>
@@ -58,14 +53,16 @@ const groupedPosts = [...new Map(posts.map((post) => [post.month, post.monthLabe
             ))
           }
         </div>
-        <aside class="tag-panel" aria-label="按 Tag 筛选文章">
+        <aside class="tag-panel" aria-label="筛选文章分类">
+          <p class="tag-panel-title">FILTER / ARCHIVE</p>
           <nav class="tag-filter">
             <a href="articles.html" data-tag-filter="all" aria-pressed="true">All</a>
             {tags.map((tag) => <a href={`articles.html?tag=${encodeURIComponent(tagFilterValue(tag))}`} data-tag-filter={tagFilterValue(tag)} aria-pressed="false">{tag}</a>)}
+            {ARTICLE_COLLECTIONS.map((collection) => <a href={`articles.html?category=${encodeURIComponent(tagFilterValue(collection))}`} data-category-filter={tagFilterValue(collection)} aria-pressed="false">{collection}</a>)}
           </nav>
         </aside>
       </div>
-      <p class="archive-empty" data-archive-empty hidden>这个 Tag 下面还没有文章。</p>
+      <p class="archive-empty" data-archive-empty hidden>这个分类下还没有文章。</p>
     </section>
   </main>
 </SiteLayout>

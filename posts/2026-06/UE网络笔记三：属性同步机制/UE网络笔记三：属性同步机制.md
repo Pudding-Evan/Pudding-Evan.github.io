@@ -1,7 +1,6 @@
 ---
 date: 2026-06-07
 tags:
-  - "Note"
   - "Net"
 summary: "施工中..."
 order: 3
@@ -133,7 +132,7 @@ TSharedPtr<FRepLayout> UNetDriver::GetObjectClassRepLayout( UClass * Class )
 
 回到一帧，属性同步的入口函数仍在`UActorChannel::ReplicateActor`这里，调用路径如下，最终走到`RepLayout::ReplicateProperties`
 
-```C++
+```cpp
 UActorChannel::ReplicateActor
     ActorReplicator::ReplicateProperties
     	RepLayout::ReplicateProperties

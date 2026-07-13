@@ -1,7 +1,6 @@
 ---
 date: 2026-05-30
 tags:
-  - "Note"
   - "GAS"
 summary: "GE 属性修改案例"
 order: 3

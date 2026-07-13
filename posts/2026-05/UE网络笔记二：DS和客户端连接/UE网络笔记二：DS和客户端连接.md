@@ -1,7 +1,6 @@
 ---
 date: 2026-05-28
 tags:
-  - "Note"
   - "Net"
 summary: "DS 和客户端连接流程梳理。"
 order: 2

@@ -21,6 +21,7 @@ export type Article = {
   date: string;
   tag: string;
   tags: string[];
+  collection?: string;
   month: string;
   monthLabel: string;
   summary: string;
@@ -29,6 +30,8 @@ export type Article = {
   headings: MarkdownHeading[];
   Content: AstroComponentFactory;
 };
+export const ARTICLE_COLLECTIONS = ["一期一会"] as const;
+
 
 export type Video = {
   bvid: string;
@@ -173,6 +176,20 @@ function fallbackTags(sourceName: string, category: string): string[] {
   if (/^\d{4}-\d{2}$/.test(parts[0] ?? "")) return ["Note"];
   return [category || "Note"];
 }
+function articleCollection(sourceName: string): string | undefined {
+  const folders = sourceName.split("/").slice(0, -1);
+  return ARTICLE_COLLECTIONS.find((collection) => folders.includes(collection));
+}
+
+function canonicalArticleTags(tags: string[], collection?: string): string[] {
+  if (collection) return [];
+
+  const normalizedTags = new Set(tags.map((tag) => tag.toLowerCase()));
+  if (normalizedTags.has("gas")) return ["GAS"];
+  if (normalizedTags.has("net")) return ["Net"];
+  return ["Note"];
+}
+
 
 function dateValue(value: unknown): string {
   if (typeof value === "string") return value.trim().slice(0, 10);
@@ -250,11 +267,13 @@ export function getAllArticles(): Article[] {
       const date = normalizeDate(dateValue(frontmatter.date) || row.date || "2026-01-01");
       const frontmatterTags = uniqueValues([...listValue(frontmatter.tags), ...listValue(frontmatter.tag)]);
       const rowTags = uniqueValues([...listValue(row.tags), ...listValue(row.tag)]);
-      const tags = uniqueValues([
+      const sourceTags = uniqueValues([
         ...(frontmatterTags.length ? frontmatterTags : rowTags),
         ...(!frontmatterTags.length && !rowTags.length ? fallbackTags(sourceName, category) : [])
       ]);
-      const tag = tags[0] || "Note";
+      const collection = articleCollection(sourceName);
+      const tags = canonicalArticleTags(sourceTags, collection);
+      const tag = collection || tags[0] || "Note";
       const month = monthFromDate(date);
       const summary = textValue(frontmatter.summary) || row.summary || firstParagraph(raw);
       const orderValue = textValue(frontmatter.order) || row["顺序"] || row.order;
@@ -269,6 +288,7 @@ export function getAllArticles(): Article[] {
         date,
         tag,
         tags,
+        collection,
         month,
         monthLabel: displayMonth(month),
         summary,
@@ -283,9 +303,22 @@ export function getAllArticles(): Article[] {
   return sortByDate(posts);
 }
 
-export function getHomeArticles(tag = "Note"): Article[] {
+export function getHomeArticles(tag = ""): Article[] {
+  const publicPosts = getPublicArticles();
+  if (!tag) return publicPosts;
   const normalizedTag = tag.toLowerCase();
-  return sortByDate(getAllArticles().filter((post) => post.tags.some((item) => item.toLowerCase() === normalizedTag)));
+  return sortByDate(publicPosts.filter((post) => post.tags.some((item) => item.toLowerCase() === normalizedTag)));
+}
+
+export function getPublicArticles(): Article[] {
+  return sortByDate(getAllArticles().filter((post) => !post.collection));
+}
+
+export function getCollectionArticles(collection: string): Article[] {
+  const normalizedCollection = collection.toLowerCase();
+  return sortByDate(
+    getAllArticles().filter((post) => post.collection?.toLowerCase() === normalizedCollection)
+  );
 }
 
 function parseBvid(value: string): string {
