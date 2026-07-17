@@ -42,7 +42,7 @@ export default function remarkPostAssets() {
     if (!prefix) return;
 
     visit(tree, (node) => {
-      if ((node.type === "image" || node.type === "link") && typeof node.url === "string") {
+      if (node.type === "link" && typeof node.url === "string") {
         node.url = rewriteRelativeAssetUrl(node.url, prefix);
       }
 

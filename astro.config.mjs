@@ -1,3 +1,4 @@
+import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import remarkPostAssets from "./scripts/remark-post-assets.mjs";
 
@@ -7,6 +8,8 @@ export default defineConfig({
     format: "file"
   },
   markdown: {
-    remarkPlugins: [remarkPostAssets]
+    processor: unified({
+      remarkPlugins: [remarkPostAssets]
+    })
   }
 });
