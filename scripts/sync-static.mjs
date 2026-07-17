@@ -1,9 +1,37 @@
-import { copyFile, cp, mkdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
 const publicDir = path.join(root, "public");
+const postsDir = path.join(root, "posts");
+
+async function copyPostAssets(sourceDir, targetDir) {
+  if (!existsSync(sourceDir)) return;
+
+  await rm(targetDir, { recursive: true, force: true });
+
+  async function copyEntries(currentSource, currentTarget) {
+    const entries = await readdir(currentSource, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const source = path.join(currentSource, entry.name);
+      const target = path.join(currentTarget, entry.name);
+
+      if (entry.isDirectory()) {
+        await copyEntries(source, target);
+        continue;
+      }
+
+      if (!entry.isFile() || entry.name.toLowerCase().endsWith(".md")) continue;
+
+      await mkdir(path.dirname(target), { recursive: true });
+      await copyFile(source, target);
+    }
+  }
+
+  await copyEntries(sourceDir, targetDir);
+}
 
 await mkdir(publicDir, { recursive: true });
 
@@ -30,3 +58,5 @@ for (const [from, to] of copies) {
     await cp(source, target, { recursive: true, force: true });
   }
 }
+
+await copyPostAssets(postsDir, path.join(publicDir, "posts"));
