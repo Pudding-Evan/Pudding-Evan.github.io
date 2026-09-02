@@ -1,0 +1,147 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="ASC 与 Attribute"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%B8%80%EF%BC%9AASC%E4%B8%8EAttribute.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="GAS设计解析一：ASC与Attribute | Elysium"><meta property="og:description" content="ASC 与 Attribute"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%B8%80%EF%BC%9AASC%E4%B8%8EAttribute.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-05-29"><meta property="article:tag" content="GAS"><title>GAS设计解析一：ASC与Attribute | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=gas">GAS</a> <span>2026.05.29</span>  <span>6 MIN READ</span> </div> <h1 id="gas设计解析一asc与attribute">GAS设计解析一：ASC与Attribute</h1>
+<p>GAS 是虚幻引擎的一套可扩展技能框架。它主要包含几类内容：</p>
+<ol>
+<li>管理基于 Actor 的属性值，也就是 Attribute。</li>
+<li>提供状态效果的管理，也就是 GameplayEffect。</li>
+<li>制作角色能力，支持等级、冷却、消耗等一系列基本需求，也就是 GameplayAbility。</li>
+<li>提供技能触发时的表现，例如特效、声音，也就是 GameplayCue。</li>
+<li>支持网络同步，能够满足多人游戏的需求。</li>
+</ol>
+<p>这一篇先从 Ability System Component 和 Attribute 说起。简单来说，ASC 是 GAS 的中枢，Attribute 是被这套系统管理和修改的数据。后面的 GameplayEffect、GameplayAbility、GameplayCue、GameplayTag，最后都会回到 ASC 这里做登记、查询、应用和同步。</p>
+<h2 id="ability-system-component">Ability System Component</h2>
+<p>ASC 是这套技能系统管理的中枢。每个需要被 GAS 管理和影响的 Actor，都需要拥有一个 <code>UAbilitySystemComponent</code>。同时，这个组件继承自 <code>UGameplayTasksComponent</code>，所以它天然可以和 AbilityTask 这套异步任务机制配合。</p>
+<p>ASC 里有两个非常关键的 Actor 引用：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">UPROPERTY</span><span style="color:#E1E4E8">(ReplicatedUsing </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> OnRep_OwningActor)</span></span>
+<span class="line"><span style="color:#E1E4E8">TObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">AActor</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> OwnerActor;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">UPROPERTY</span><span style="color:#E1E4E8">(ReplicatedUsing </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> OnRep_OwningActor)</span></span>
+<span class="line"><span style="color:#E1E4E8">TObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">AActor</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> AvatarActor;</span></span></code></pre>
+<p><code>OwnerActor</code> 是逻辑所有者，<code>AvatarActor</code> 是当前在世界中实际表现这个能力系统的物理对象。二者可能是同一个对象，也可能不是。</p>
+<p>例如一个玩家角色身上直接挂 ASC，那么角色可以同时作为 OwnerActor 和 AvatarActor。</p>
+<p>但如果希望技能、属性、冷却等数据在角色死亡后仍然保留，常见做法是把 ASC 放在 <code>PlayerState</code> 上。此时 <code>PlayerState</code> 是 OwnerActor，当前操作的 <code>Character</code> 是 AvatarActor。角色死亡、重生、换 Pawn，只需要重新初始化 AvatarActor，ASC 本身仍然跟随 PlayerState 存在。</p>
+<p>这里一般不建议把 ASC 放在 <code>PlayerController</code> 上。原因很简单：客户端只知道自己的 PlayerController，不会拥有其他玩家的 PlayerController；而 PlayerState 会同步给所有客户端。</p>
+<p>初始化这两个对象的核心入口是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">AbilitySystemComponent-></span><span style="color:#B392F0">InitAbilityActorInfo</span><span style="color:#E1E4E8">(InOwnerActor, InAvatarActor);</span></span></code></pre>
+<p><code>InitAbilityActorInfo</code> 会刷新 <code>FGameplayAbilityActorInfo</code>。这个结构体里缓存了 Owner、Avatar、PlayerController、MovementComponent、SkeletalMeshComponent、AnimInstance 等信息，方便 Ability 和 AbilityTask 在执行时快速访问。</p>
+<p>例如 <code>UAbilityTask_ApplyRootMotionConstantForce</code> 会从 ActorInfo 里拿到 <code>MovementComponent</code>，然后执行 RootMotionSource 相关逻辑。</p>
+<p><img  src="/_astro/01_01.DGBvV9xd_Z1cAgRY.webp" alt="FGameplayAbilityActorInfo 缓存信息" loading="lazy" decoding="async" width="517" height="217"></p>
+<h3 id="属性及自动注册">属性及自动注册</h3>
+<p>比如角色拥有血量、魔法这样的属性。如果没有 GAS，我们可以把这些值直接写进对应的 Actor 中管理。引入 GAS 之后，期待被 GAS 影响的属性会被放进 <code>UAttributeSet</code>，并注册到 ASC 中。</p>
+<p>GAS 使用 <code>Attribute</code> 描述一个具体属性，使用 <code>AttributeSet</code> 承载一组属性。一个角色可以有多个 AttributeSet，例如：</p>
+<ul>
+<li><code>UHealthAttributeSet</code> 保存生命、护盾、生命恢复。</li>
+<li><code>UCombatAttributeSet</code> 保存攻击力、暴击率、护甲。</li>
+<li><code>UWeaponAttributeSet</code> 保存某件武器运行时附加的属性。</li>
+</ul>
+<p>ASC 中保存 AttributeSet 的成员是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">UPROPERTY</span><span style="color:#E1E4E8">(Replicated, ReplicatedUsing </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> OnRep_SpawnedAttributes, Transient)</span></span>
+<span class="line"><span style="color:#E1E4E8">TArray</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">TObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UAttributeSet</span><span style="color:#F97583">>></span><span style="color:#E1E4E8"> SpawnedAttributes;</span></span></code></pre>
+<p>它记录当前 ASC 已经拥有的 AttributeSet。源代码中还提供了用于操作它的接口：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> AddSpawnedAttribute</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UAttributeSet</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Attribute</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> RemoveSpawnedAttribute</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UAttributeSet</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Attribute</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> RemoveAllSpawnedAttributes</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> SetSpawnedAttributesListDirty</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<h4 id="构造期注册">构造期注册</h4>
+<p>最常见的方式是在 OwnerActor 的构造函数中创建 AttributeSet 子对象：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">HealthSet </span><span style="color:#F97583">=</span><span style="color:#B392F0"> CreateDefaultSubobject</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">UHealthAttributeSet</span><span style="color:#E1E4E8">>(</span><span style="color:#B392F0">TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"HealthSet"</span><span style="color:#E1E4E8">));</span></span></code></pre>
+<p>ASC 初始化时会查找 OwnerActor 下面的 AttributeSet 子对象，并把它们加入 <code>SpawnedAttributes</code>。这种方式最稳定，也最符合 GAS 的默认假设。</p>
+<h4 id="运行时注册">运行时注册</h4>
+<p>也可以在运行时添加 AttributeSet，例如武器装备后临时添加武器属性：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">AbilitySystemComponent-></span><span style="color:#B392F0">AddSpawnedAttribute</span><span style="color:#E1E4E8">(WeaponAttributeSet);</span></span>
+<span class="line"><span style="color:#E1E4E8">AbilitySystemComponent-></span><span style="color:#B392F0">ForceReplication</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<p>移除时使用：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">AbilitySystemComponent-></span><span style="color:#B392F0">RemoveSpawnedAttribute</span><span style="color:#E1E4E8">(WeaponAttributeSet);</span></span>
+<span class="line"><span style="color:#E1E4E8">AbilitySystemComponent-></span><span style="color:#B392F0">ForceReplication</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<p>这里需要注意一个同步问题：如果服务端移除了某个 AttributeSet，而客户端随后才收到这个 AttributeSet 内某个属性的复制更新，就可能出现客户端找不到 AttributeSet 的情况。运行时移除 AttributeSet 要非常谨慎，尤其不要在相关 GameplayEffect、属性复制和预测效果还没有干净结束时直接移除。</p>
+<h3 id="asc-的关键成员">ASC 的关键成员</h3>
+<p>ASC 里有几个关键的成员变量：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">FGameplayAbilitySpecContainer ActivatableAbilities;</span></span>
+<span class="line"><span style="color:#E1E4E8">FActiveGameplayEffectsContainer ActiveGameplayEffects;</span></span>
+<span class="line"><span style="color:#E1E4E8">FActiveGameplayCueContainer ActiveGameplayCues;</span></span></code></pre>
+<p><code>ActivatableAbilities</code> 保存已经授予 ASC 的 Ability。Ability 需要先被授予，才能被激活。</p>
+<p><code>ActiveGameplayEffects</code> 保存已经作用在 ASC 上的 GameplayEffect。Duration 和 Infinite 类型的 GE 会在这里留下 ActiveGameplayEffect，Instant GE 则通常执行完就结束；预测场景下，客户端会把预测 Instant GE 临时当作 Infinite 来处理。</p>
+<p><code>ActiveGameplayCues</code> 保存当前激活的 GameplayCue 状态。Cue 更偏表现层，例如持续燃烧特效、命中特效、声音等。</p>
+<h2 id="attribute">Attribute</h2>
+<p>GAS 中的属性本质是一组float，但是被包装成了一个特殊的结构体，即 <code>FGameplayAttributeData</code>：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FGameplayAttributeData</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">	GENERATED_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">protected:</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">(BlueprintReadOnly, Category </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> "Attribute"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#F97583">	float</span><span style="color:#E1E4E8"> BaseValue;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">BlueprintReadOnly</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">Category</span><span style="color:#F97583"> =</span><span style="color:#9ECBFF"> "Attribute"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#F97583">	float</span><span style="color:#E1E4E8"> CurrentValue;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>它有两个值：</p>
+<ul>
+<li><code>BaseValue</code>：基础值，可以理解为属性的长期值。</li>
+<li><code>CurrentValue</code>：当前值，可以理解为基础值加上当前所有临时修正后的结果。</li>
+</ul>
+<p>例如角色的基础生命上限是 100，装备和 Buff 让它临时变成 130，那么 100 就是这个 BaseValue，130 则是 CurrentValue。</p>
+<p>Instant GameplayEffect 通常修改 BaseValue。Duration 和 Infinite GameplayEffect 的 Modifier 则通常在效果生效期间参与属性计算，影响 CurrentValue。这也很好理解，即时 GE 改完就结束，因此可以直接改动 BaseValue；持续 GE 后续还会被移除，所以更适合让 Modifier 临时参与当前值计算，结束后再重新算回去。</p>
+<h3 id="定义-attribute">定义 Attribute</h3>
+<p>项目里通常会写一个宏来生成 Attribute 的访问器：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">#define</span><span style="color:#B392F0"> ATTRIBUTE_ACCESSORS</span><span style="color:#E1E4E8">(</span><span style="color:#FFAB70">ClassName</span><span style="color:#E1E4E8">, </span><span style="color:#FFAB70">PropertyName</span><span style="color:#E1E4E8">) </span><span style="color:#79B8FF">\</span></span>
+<span class="line"><span style="color:#B392F0">	GAMEPLAYATTRIBUTE_PROPERTY_GETTER</span><span style="color:#E1E4E8">(ClassName, PropertyName) </span><span style="color:#79B8FF">\</span></span>
+<span class="line"><span style="color:#B392F0">	GAMEPLAYATTRIBUTE_VALUE_GETTER</span><span style="color:#E1E4E8">(PropertyName) </span><span style="color:#79B8FF">\</span></span>
+<span class="line"><span style="color:#B392F0">	GAMEPLAYATTRIBUTE_VALUE_SETTER</span><span style="color:#E1E4E8">(PropertyName) </span><span style="color:#79B8FF">\</span></span>
+<span class="line"><span style="color:#B392F0">	GAMEPLAYATTRIBUTE_VALUE_INITTER</span><span style="color:#E1E4E8">(PropertyName)</span></span></code></pre>
+<p>然后在 AttributeSet 中定义属性：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">UPROPERTY</span><span style="color:#E1E4E8">(BlueprintReadOnly, ReplicatedUsing </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> OnRep_Health)</span></span>
+<span class="line"><span style="color:#E1E4E8">FGameplayAttributeData Health;</span></span>
+<span class="line"><span style="color:#B392F0">ATTRIBUTE_ACCESSORS</span><span style="color:#E1E4E8">(UHealthAttributeSet, Health)</span></span></code></pre>
+<p>复制回调中通常使用：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">GAMEPLAYATTRIBUTE_REPNOTIFY</span><span style="color:#E1E4E8">(UHealthAttributeSet, Health, OldValue);</span></span></code></pre>
+<p>这样 GAS 才能正确感知属性复制带来的变化。</p>
+<h3 id="修改-attribute-的方式">修改 Attribute 的方式</h3>
+<p>修改 Attribute 有两种方式：</p>
+<ol>
+<li>直接使用 Setter 修改属性。</li>
+<li>通过 GameplayEffect 修改属性。</li>
+</ol>
+<p>Setter 更像是代码层面的直接赋值，适合初始化或少量明确场景。项目中的主要属性变化，通常应该通过 GameplayEffect 完成。</p>
+<p>原因也不复杂：GameplayEffect 承担了 Attribute 修改的媒介角色。受到伤害、获得治疗、增加 Buff、触发消耗，都是“某种效果作用到 ASC 上”。如果都绕过 GE 直接写值，后面就很难统一处理预测、标签、堆叠、持续时间、GameplayCue 和网络同步。</p>
+<h3 id="修改过程中的关键函数">修改过程中的关键函数</h3>
+<p>AttributeSet 提供了一组重要钩子，项目中经常会重写它们：</p>
+<p><img  src="/_astro/01_02.D68FnZIH_2pQqtu.webp" alt="Attribute 修改相关钩子" loading="lazy" decoding="async" width="1028" height="543"></p>
+<p><code>PreAttributeChange</code> 在 CurrentValue 变化前调用，适合做限制操作，例如 Clamp。它接收的是引用参数，可以直接修正即将写入的值。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UHealthAttributeSet</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">PreAttributeChange</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#F97583">	const</span><span style="color:#B392F0"> FGameplayAttribute</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Attribute</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">	float&#x26;</span><span style="color:#FFAB70"> NewValue</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (Attribute </span><span style="color:#F97583">==</span><span style="color:#B392F0"> GetHealthAttribute</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#E1E4E8">		NewValue </span><span style="color:#F97583">=</span><span style="color:#B392F0"> FMath</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">Clamp</span><span style="color:#E1E4E8">(NewValue, </span><span style="color:#79B8FF">0.</span><span style="color:#F97583">f</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">GetMaxHealth</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p><code>PostAttributeChange</code> 在 CurrentValue 变化后调用，适合做依赖属性的后续处理。</p>
+<p><code>PreGameplayEffectExecute</code> 在 Instant GameplayEffect 执行前调用，返回 <code>false</code> 可以阻止这次修改继续执行。</p>
+<p><code>PostGameplayEffectExecute</code> 在 Instant GameplayEffect 执行后调用，适合处理伤害结算、死亡判断、把 Meta Attribute 清零等逻辑。</p>
+<p>还有属性变化委托：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">AbilitySystemComponent</span></span>
+<span class="line"><span style="color:#F97583">	-></span><span style="color:#B392F0">GetGameplayAttributeValueChangeDelegate</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">GetHealthAttribute</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">	.</span><span style="color:#B392F0">AddUObject</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">&#x26;</span><span style="color:#B392F0">ThisClass</span><span style="color:#E1E4E8">::OnHealthChanged);</span></span></code></pre>
+<p>委托参数是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FOnAttributeChangeData</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">	FGameplayAttribute Attribute;</span></span>
+<span class="line"><span style="color:#F97583">	float</span><span style="color:#E1E4E8"> NewValue;</span></span>
+<span class="line"><span style="color:#F97583">	float</span><span style="color:#E1E4E8"> OldValue;</span></span>
+<span class="line"><span style="color:#E1E4E8">	FGameplayEffectModCallbackData</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> GEModData;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>其中 <code>GEModData</code> 只在服务端执行 GameplayEffect 修改时可靠存在。客户端收到属性复制时，不应假设这里一定有完整的 GE 上下文。</p>
+<h2 id="总结">总结</h2>
+<p>ASC 是 GAS 的状态中枢，OwnerActor 决定逻辑归属，AvatarActor 决定当前世界中的执行对象。AttributeSet 负责承载属性，<code>SpawnedAttributes</code> 负责把这些属性注册给 ASC。</p>
+<p>Attribute 自身通过 BaseValue 和 CurrentValue 区分长期值与当前值。真正的玩法修改通常应该通过 GameplayEffect 进入系统，这样后续的预测、堆叠、标签、持续时间和表现层才有统一入口。下一篇会从这个入口继续往下看：GE 如何从一份数据配置变成 ASC 上的持续状态或一次即时结算。</p>
+<p>关键代码:</p>
+<ul>
+<li><code>UAbilitySystemComponent::InitAbilityActorInfo</code></li>
+<li><code>UAbilitySystemComponent::InitializeComponent</code></li>
+<li><code>UAbilitySystemComponent::AddSpawnedAttribute</code></li>
+<li><code>UAbilitySystemComponent::RemoveSpawnedAttribute</code></li>
+<li><code>UAttributeSet::PreAttributeChange</code></li>
+<li><code>UAttributeSet::PostGameplayEffectExecute</code></li>
+</ul> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-05/GAS设计解析二：GameplayEffect.html"> <span>← NEWER</span> <strong>GAS设计解析二：GameplayEffect</strong> </a> <a class="article-pagination-next" href="../../posts/2026-05/UE网络笔记二：DS和客户端连接.html"> <span>OLDER →</span> <strong>UE网络笔记二：DS和客户端连接</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-05/GAS设计解析四：GA与GameplayTag.html">GAS设计解析四：GA与GameplayTag</a><a href="../../posts/2026-05/GAS设计解析五：GAS预测.html">GAS设计解析五：GAS预测</a><a href="../../posts/2026-05/GAS设计解析三：GE属性修改案例.html">GAS设计解析三：GE属性修改案例</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#ability-system-component"> Ability System Component </a><a class="article-toc-link depth-3" href="#属性及自动注册"> 属性及自动注册 </a><a class="article-toc-link depth-3" href="#asc-的关键成员"> ASC 的关键成员 </a><a class="article-toc-link depth-2" href="#attribute"> Attribute </a><a class="article-toc-link depth-3" href="#定义-attribute"> 定义 Attribute </a><a class="article-toc-link depth-3" href="#修改-attribute-的方式"> 修改 Attribute 的方式 </a><a class="article-toc-link depth-3" href="#修改过程中的关键函数"> 修改过程中的关键函数 </a><a class="article-toc-link depth-2" href="#总结"> 总结 </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

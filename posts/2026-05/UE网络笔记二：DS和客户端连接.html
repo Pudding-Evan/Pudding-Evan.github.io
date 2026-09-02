@@ -1,0 +1,468 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="DS 和客户端连接流程梳理。"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%BA%8C%EF%BC%9ADS%E5%92%8C%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%BF%9E%E6%8E%A5.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="UE网络笔记二：DS和客户端连接 | Elysium"><meta property="og:description" content="DS 和客户端连接流程梳理。"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%BA%8C%EF%BC%9ADS%E5%92%8C%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%BF%9E%E6%8E%A5.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-05-28"><meta property="article:tag" content="Net"><title>UE网络笔记二：DS和客户端连接 | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=net">Net</a> <span>2026.05.28</span>  <span>9 MIN READ</span> </div> <h1 id="ue网络笔记二ds和客户端连接">UE网络笔记二：DS和客户端连接</h1>
+<h2 id="零登录流程">零：登录流程</h2>
+<p>下文会参照该时序图分析，大致分成三个阶段</p>
+<ol>
+<li>DS启动并就绪，等待客户端连接</li>
+<li>客户端发起连接请求，和DS进行握手通信</li>
+<li>地图加载完成后进行Join入场</li>
+</ol>
+<p><img  src="/_astro/image.DKDHp9fQ_1YO2XF.webp" alt="image" loading="lazy" decoding="async" width="1486" height="1516"></p>
+<h3 id="概念解析">概念解析</h3>
+<h4 id="dedicated-server">Dedicated Server</h4>
+<p>Dedicated Server大概可以翻译成专用服务器或者独立服务器。我觉得这个名字主要是和Listen Server区分开，后者意思是一个玩家客户端同时也是服务器，这个进程既有本地玩家、有渲染有输入、也接受其他客户端的连接。Dedicated则更突出体现它是单独的服务器进程。</p>
+<p>对一个常见的单局游戏，后台服务、DS 和客户端的关系大致是</p>
+<ul>
+<li>后台服务启动远端的DS进程，指定地图和端口</li>
+<li>DS LoadMap之后创建出Server World，监听客户端连接</li>
+<li>客户端会先建立PendingNetGame的连接态，客户端拿到地址和端口后，请求建立连接，双方创建好Connection，完成登录请求。</li>
+<li>客户端LoadMap，创建Client World，进入对局。</li>
+</ul>
+<h4 id="pendingnetgame"><strong><code>PendingNetGame</code></strong></h4>
+<p><code>UPendingNetGame</code> 是客户端连接远端服务器时的过渡对象。它存在于 <code>ClientTravel</code> 之后、正式 Client World 建立之前，负责持有目标 <code>URL</code>、临时 <code>PendingNetDriver</code>、到服务器的 <code>ServerConnection</code>、连接错误、地图名以及是否连接成功等状态。</p>
+<h4 id="control-message"><strong><code>Control Message</code></strong></h4>
+<p><code>NMT_Hello</code>、<code>NMT_Challenge</code>、<code>NMT_Login</code>、<code>NMT_Welcome</code>、<code>NMT_Netspeed</code>、<code>NMT_Join</code> 都是控制通道上的消息。通常在<code>UWorld::NotifyControlMessage</code> 或 <code>UPendingNetGame::NotifyControlMessage</code> 中处理。可以理解为一段特定格式编排的消息，也是通过包装成Packet，通过<code>ControllerChannel</code>通道收发，进行连接握手，并推动各自的流程。</p>
+<h2 id="一ds启动loadmapgamemode-和-listen">一、DS启动：<strong><code>LoadMap</code>、<code>GameMode</code> 和 Listen</strong></h2>
+<p>DS进程启动后，为了创建Server World，会进入到<code>UEngine::Browse</code> ，解析地图名后，再进入到<code>UEngine::LoadMap</code>加载地图。我们把它作为起点进行叙述。</p>
+<p>这部分内容在<a href="https://www.youtube.com/watch?v=IaU2Hue-ApI">https://www.youtube.com/watch?v=IaU2Hue-ApI</a> 也有非常详细的提及。</p>
+<p>注意下面这段<code>UEngine::LoadMap</code>中，客户端和服务器都会调用，但是时机不同，流程大致相似。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> UEngine</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">LoadMap</span><span style="color:#E1E4E8">( </span><span style="color:#B392F0">FWorldContext</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> WorldContext</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FURL</span><span style="color:#FFAB70"> URL</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">class</span><span style="color:#B392F0"> UPendingNetGame</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Pending</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Error</span><span style="color:#E1E4E8"> )</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">		// ...</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#6A737D">		// 1. 卸载旧world、关闭旧NetDriver</span></span>
+<span class="line"><span style="color:#F97583">		if</span><span style="color:#E1E4E8">(worldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">		{</span></span>
+<span class="line"><span style="color:#6A737D">			// Clean up networking</span></span>
+<span class="line"><span style="color:#B392F0">			ShutdownWorldNetDriver</span><span style="color:#E1E4E8">(WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">			WorldContext.</span><span style="color:#B392F0">SetCurrentWorld</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">nullptr</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">		}</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#6A737D">		// 2. 加载地图包,把新world设置为当前world</span></span>
+<span class="line"><span style="color:#E1E4E8">		UPackage</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> WorldPackage </span><span style="color:#F97583">=</span><span style="color:#B392F0"> FindPackage</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">nullptr</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">URL.Map);</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (WorldPackage </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        WorldPackage </span><span style="color:#F97583">=</span><span style="color:#B392F0"> LoadPackage</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">nullptr</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">URL.Map, LOAD_None);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">    UWorld</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> NewWorld </span><span style="color:#F97583">=</span><span style="color:#B392F0"> UWorld</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">FindWorldInPackage</span><span style="color:#E1E4E8">(WorldPackage);</span></span>
+<span class="line"><span style="color:#E1E4E8">    NewWorld-></span><span style="color:#B392F0">SetGameInstance</span><span style="color:#E1E4E8">(WorldContext.OwningGameInstance);</span></span>
+<span class="line"><span style="color:#E1E4E8">    GWorld </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> NewWorld;</span></span>
+<span class="line"><span style="color:#E1E4E8">    WorldContext.</span><span style="color:#B392F0">SetCurrentWorld</span><span style="color:#E1E4E8">(NewWorld);</span></span>
+<span class="line"><span style="color:#E1E4E8">    WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">InitWorld</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#6A737D">    // 3. DS 上会创建 GameMode；客户端加载网络地图时这里会因为 NM_Client 跳过。</span></span>
+<span class="line"><span style="color:#E1E4E8">    WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">SetGameMode</span><span style="color:#E1E4E8">(URL);</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#6A737D">    // 4. 开始监听客户端连接</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Pending </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> NULL</span><span style="color:#F97583"> &#x26;&#x26;</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">GIsClient </span><span style="color:#F97583">||</span><span style="color:#E1E4E8"> URL.</span><span style="color:#B392F0">HasOption</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"Listen"</span><span style="color:#E1E4E8">))))</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">Listen</span><span style="color:#E1E4E8">(URL);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#6A737D">    // 5. 初始化Actor,运行世界</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        FRegisterComponentContext </span><span style="color:#B392F0">Context</span><span style="color:#E1E4E8">(WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">        WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">InitializeActorsForPlay</span><span style="color:#E1E4E8">(URL, </span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">Context);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">BeginPlay</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">		 </span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<ul>
+<li><code>GameMode</code>只在Ds上存在，客户端是不会创建的。</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> UWorld</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">SetGameMode</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">const</span><span style="color:#B392F0"> FURL</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> InURL</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#B392F0">IsNetMode</span><span style="color:#E1E4E8">(NM_Client) </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#F97583"> !</span><span style="color:#E1E4E8">AuthorityGameMode)</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#E1E4E8">			AuthorityGameMode </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetGameInstance</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">CreateGameModeForURL</span><span style="color:#E1E4E8">(InURL, </span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#6A737D">		// ...</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">	return</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<ul>
+<li><code>WorldContext.World()->Listen(URL);</code> 中创建的 <code>GameNetDriver</code>，就是服务器挂在 <code>UWorld</code> 上的网络驱动器，主控网络事务。</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> UWorld</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">Listen</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FURL</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> InURL</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (GEngine-></span><span style="color:#B392F0">CreateNamedNetDriver</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, NAME_GameNetDriver, NetDriverDefinition))</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        NetDriver </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> GEngine-></span><span style="color:#B392F0">FindNamedNetDriver</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, NAME_GameNetDriver);</span></span>
+<span class="line"><span style="color:#E1E4E8">        NetDriver-></span><span style="color:#B392F0">SetWorld</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#6A737D">        //...</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    FString Error;</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">NetDriver-></span><span style="color:#B392F0">InitListen</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, InURL, bReuseAddressAndPort, Error))</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        GEngine-></span><span style="color:#B392F0">BroadcastNetworkFailure</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, NetDriver, </span><span style="color:#B392F0">ENetworkFailure</span><span style="color:#E1E4E8">::NetDriverListenFailure, Error);</span></span>
+<span class="line"><span style="color:#E1E4E8">        GEngine-></span><span style="color:#B392F0">DestroyNamedNetDriver</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, NetDriver->NetDriverName);</span></span>
+<span class="line"><span style="color:#E1E4E8">        NetDriver </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#6A737D">    //...</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h2 id="二客户端ds握手连接">二、客户端DS握手连接</h2>
+<h3 id="clienttravel"><code>ClientTravel</code></h3>
+<p>客户端也会拿到后台服务提供的URL，例如ip地址 + 端口号 + 连接信息，然后执行<code>ClientTravel</code> ，发起连接请求。<code>ClientTravel</code> 可以理解为通用的切换地图的请求函数入口。</p>
+<p>客户端发起连接前，通常已经在一个本地地图里了，例如Entry或大厅之类。这个本地的World会有本地<code>ULocalPlayer</code>和本地的<code>PlayerController</code>。这里调用<code>PlayerController->ClientTravel</code> ，用的就是这个本地<code>PlayerController</code> ，所以这里以<code>PlayerController->ClientTravel</code> 作为客户端侧的入口函数。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> APlayerController</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ClientTravel</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">const</span><span style="color:#B392F0"> FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> URL</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">ETravelType</span><span style="color:#FFAB70"> TravelType</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool</span><span style="color:#FFAB70"> bSeamless</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FGuid</span><span style="color:#FFAB70"> MapPackageGuid</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    ClientTravelInternal</span><span style="color:#E1E4E8">(URL, TravelType, bSeamless, MapPackageGuid);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> APlayerController</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ClientTravelInternal_Implementation</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">const</span><span style="color:#B392F0"> FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> URL</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">ETravelType</span><span style="color:#FFAB70"> TravelType</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool</span><span style="color:#FFAB70"> bSeamless</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FGuid</span><span style="color:#FFAB70"> MapPackageGuid</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    UWorld</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> World </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetWorld</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    PreClientTravel</span><span style="color:#E1E4E8">(URL, TravelType, bSeamless);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (bSeamless </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> TravelType </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> TRAVEL_Relative)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        World-></span><span style="color:#B392F0">SeamlessTravel</span><span style="color:#E1E4E8">(URL);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    else</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        GEngine-></span><span style="color:#B392F0">SetClientTravel</span><span style="color:#E1E4E8">(World, </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">URL, (ETravelType)TravelType);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这里并不是立刻连接，而是通过<code>SetClientTravel</code>，记录下URL，把请求交给Engine。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UEngine</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">SetClientTravel</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UWorld</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> InWorld</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#B392F0"> TCHAR</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> NextURL</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">ETravelType</span><span style="color:#FFAB70"> InTravelType</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">	FWorldContext</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> Context </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetWorldContextFromWorldChecked</span><span style="color:#E1E4E8">(InWorld);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">	// set TravelURL. Will be processed safely on the next tick in UGameEngine::Tick().</span></span>
+<span class="line"><span style="color:#E1E4E8">	Context.TravelURL </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> NextURL;</span></span>
+<span class="line"><span style="color:#E1E4E8">	Context.TravelType </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> InTravelType;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">	// ...</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>UE 的连接服务器和切换地图共用同一套 Travel 机制。<code>ClientTravel</code> / <code>ServerTravel</code> 只是把目标 URL 写入对应状态。</p>
+<p>真正执行发生在 <code>UEngine::TickWorldTravel</code>，本地地图进入 <code>LoadMap</code>，网络地址在客户端进入 <code>UPendingNetGame</code> 的分支处理。</p>
+<h3 id="uenginetickworldtravel"><code>UEngine::TickWorldTravel</code></h3>
+<p><code>UEngine::TickWorldTravel</code> 是<code>Engine</code>每帧用来推进“换图 / 连接 / <code>PendingNetGame</code>”的入口。</p>
+<p>下面代码是一个客户端视角的简化流程。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UEngine</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">TickWorldTravel</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FWorldContext</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Context</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">float</span><span style="color:#FFAB70"> DeltaSeconds</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">			// ... 只关注 ClientTravel</span></span>
+<span class="line"><span style="color:#E1E4E8">			</span></span>
+<span class="line"><span style="color:#6A737D">			// 1. 消费 TravelURL</span></span>
+<span class="line"><span style="color:#6A737D">			// URL是远端DS的话,创建PendingGame -> InitNetDriver -> InitConnect [*] </span></span>
+<span class="line"><span style="color:#6A737D">			// 发送连接信息建立起ServerConnection</span></span>
+<span class="line"><span style="color:#F97583">			if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">Context.TravelURL.</span><span style="color:#B392F0">IsEmpty</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">			{</span></span>
+<span class="line"><span style="color:#F97583">			    if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">Browse</span><span style="color:#E1E4E8">(Context, </span><span style="color:#B392F0">FURL</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">Context.LastURL, </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">TravelURLCopy, (ETravelType)Context.TravelType), Error) </span><span style="color:#F97583">==</span><span style="color:#B392F0"> EBrowseReturnVal</span><span style="color:#E1E4E8">::Failure)</span></span>
+<span class="line"><span style="color:#E1E4E8">			    {</span></span>
+<span class="line"><span style="color:#E1E4E8">			        ...</span></span>
+<span class="line"><span style="color:#E1E4E8">			    }</span></span>
+<span class="line"><span style="color:#E1E4E8">			}</span></span>
+<span class="line"><span style="color:#E1E4E8">			</span></span>
+<span class="line"><span style="color:#6A737D">			//2. 推进PendingNetGame、这里已经拥有NetDriver和ServerConnection</span></span>
+<span class="line"><span style="color:#6A737D">			// Tick -> TickDispatch -> TickFlush 驱动收发包</span></span>
+<span class="line"><span style="color:#F97583">			if</span><span style="color:#E1E4E8"> (Context.PendingNetGame)</span></span>
+<span class="line"><span style="color:#E1E4E8">			{</span></span>
+<span class="line"><span style="color:#E1E4E8">			    Context.PendingNetGame-></span><span style="color:#B392F0">Tick</span><span style="color:#E1E4E8">(DeltaSeconds);</span></span>
+<span class="line"><span style="color:#E1E4E8">			    </span></span>
+<span class="line"><span style="color:#6A737D">			    // 2.1 连接失败...</span></span>
+<span class="line"><span style="color:#E1E4E8">			    </span></span>
+<span class="line"><span style="color:#6A737D">			    // 2.2 如果连接成功、加载地图</span></span>
+<span class="line"><span style="color:#F97583">			    if</span><span style="color:#E1E4E8">(Context.PendingNetGame->bSuccessfullyConnected </span></span>
+<span class="line"><span style="color:#F97583">					    &#x26;&#x26;!</span><span style="color:#E1E4E8">Context.PendingNetGame->bLoadedMapSuccessfully)</span></span>
+<span class="line"><span style="color:#E1E4E8">			    {</span></span>
+<span class="line"><span style="color:#B392F0">					    LoadMapSeamless</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">								    Context,</span></span>
+<span class="line"><span style="color:#E1E4E8">								    Context.PendingNetGame->URL,</span></span>
+<span class="line"><span style="color:#E1E4E8">								    Context.PendingNetGame,</span></span>
+<span class="line"><span style="color:#E1E4E8">								    Error</span></span>
+<span class="line"><span style="color:#E1E4E8">								);</span></span>
+<span class="line"><span style="color:#E1E4E8">			    }</span></span>
+<span class="line"><span style="color:#E1E4E8">					</span></span>
+<span class="line"><span style="color:#6A737D">					// 2.3 地图加载完、PendingNetGame结束、客户端正式进入Client World</span></span>
+<span class="line"><span style="color:#F97583">					if</span><span style="color:#E1E4E8"> (Context.PendingNetGame->bLoadedMapSuccessfully)</span></span>
+<span class="line"><span style="color:#E1E4E8">					{</span></span>
+<span class="line"><span style="color:#E1E4E8">					    Context.PendingNetGame-></span><span style="color:#B392F0">TravelCompleted</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, Context);</span></span>
+<span class="line"><span style="color:#E1E4E8">					    Context.PendingNetGame </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">					}</span></span>
+<span class="line"><span style="color:#E1E4E8">			</span></span>
+<span class="line"><span style="color:#E1E4E8">			}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p><code>PendingNetGame</code>在<code>UEngine::Browse</code> 内创建出来，并初始化<code>NetDriver</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">WorldContext.PendingNetGame </span><span style="color:#F97583">=</span><span style="color:#B392F0"> NewObject</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">UPendingNetGame</span><span style="color:#E1E4E8">>();</span></span>
+<span class="line"><span style="color:#E1E4E8">WorldContext.PendingNetGame-></span><span style="color:#B392F0">Initialize</span><span style="color:#E1E4E8">(WorldContext.LastURL);</span></span>
+<span class="line"><span style="color:#E1E4E8">WorldContext.PendingNetGame-></span><span style="color:#B392F0">InitNetDriver</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<p><code>NetDriver</code>会负责创建出<code>ServerConnection</code> ，具体的逻辑在子类<code>IpNetDriver</code>中，这也是之后客户端和服务器通信的通道。<code>InitNetDriver</code>还负责发送<code>NMT_Hello</code>的握手消息。</p>
+<p>这里写了一个<code>PreBeginHandshake</code> 的异步拓展点，可以参考下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UPendingNetGame</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">InitNetDriver</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8">( NetDriver-></span><span style="color:#B392F0">InitConnect</span><span style="color:#E1E4E8">( </span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, URL, ConnectionError ) )</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        FNetDelegates</span><span style="color:#E1E4E8">::OnPendingNetGameConnectionCreated.</span><span style="color:#B392F0">Broadcast</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">        ULocalPlayer</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> LocalPlayer </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> GEngine-></span><span style="color:#B392F0">GetFirstGamePlayer</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (LocalPlayer)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#6A737D">            // 这里绕一下给LocalPlayer，设计意图是让LocalPlayer执行一些异步准备</span></span>
+<span class="line"><span style="color:#6A737D">            // 例如一些其他的平台登录认证，准备好了再执行握手</span></span>
+<span class="line"><span style="color:#6A737D">            // 默认实现这里绑了回调直接就触发了</span></span>
+<span class="line"><span style="color:#E1E4E8">            LocalPlayer-></span><span style="color:#B392F0">PreBeginHandshake</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">ULocalPlayer</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">FOnPreBeginHandshakeCompleteDelegate</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">CreateWeakLambda</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#E1E4E8">                [</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">]()</span></span>
+<span class="line"><span style="color:#E1E4E8">                {</span></span>
+<span class="line"><span style="color:#B392F0">                    BeginHandshake</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">                }));</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#F97583">        else</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#B392F0">            BeginHandshake</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h3 id="login处理">Login处理</h3>
+<ol>
+<li>DS收到客户端发送的<code>NMT_Hello</code> 信息后，进行一些基础检查，例如版本匹配，是否需要升级等。</li>
+<li>通过基础检查后，发<code>NMT_Challenge</code> 消息给客户端。</li>
+<li>客户端收到后发<code>NMT_Login</code> 正式请求登录</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UPendingNetGame</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">NotifyControlMessage</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UNetConnection</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Connection</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">uint8</span><span style="color:#FFAB70"> MessageType</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FInBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    switch</span><span style="color:#E1E4E8"> (MessageType)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        case</span><span style="color:#E1E4E8"> NMT_Challenge:</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">FNetControlMessage</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">NMT_Challenge</span><span style="color:#E1E4E8">>::</span><span style="color:#B392F0">Receive</span><span style="color:#E1E4E8">(Bunch, Connection->Challenge))</span></span>
+<span class="line"><span style="color:#E1E4E8">            {</span></span>
+<span class="line"><span style="color:#E1E4E8">                FURL </span><span style="color:#B392F0">PartialURL</span><span style="color:#E1E4E8">(URL);</span></span>
+<span class="line"><span style="color:#6A737D">                // ...</span></span>
+<span class="line"><span style="color:#6A737D">								// 玩家名字/登录选项/UniqueNetId</span></span>
+<span class="line"><span style="color:#F97583">                if</span><span style="color:#E1E4E8"> (ULocalPlayer</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> LocalPlayer </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetFirstGamePlayer</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">                {</span></span>
+<span class="line"><span style="color:#E1E4E8">                    PartialURL.</span><span style="color:#B392F0">AddOption</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#B392F0">FString</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">Printf</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"Name=</span><span style="color:#79B8FF">%s</span><span style="color:#9ECBFF">"</span><span style="color:#E1E4E8">), </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">LocalPlayer-></span><span style="color:#B392F0">GetNickname</span><span style="color:#E1E4E8">()));</span></span>
+<span class="line"><span style="color:#E1E4E8">                    PartialURL.</span><span style="color:#B392F0">AddOption</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">LocalPlayer-></span><span style="color:#B392F0">GetGameLoginOptions</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">                    Connection->PlayerId </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> LocalPlayer-></span><span style="color:#B392F0">GetPreferredUniqueNetId</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">                }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">                Connection->ClientResponse </span><span style="color:#F97583">=</span><span style="color:#B392F0"> TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"0"</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">                FString </span><span style="color:#B392F0">URLString</span><span style="color:#E1E4E8">(PartialURL.</span><span style="color:#B392F0">ToString</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">                FNetControlMessage</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">NMT_Login</span><span style="color:#E1E4E8">>::</span><span style="color:#B392F0">Send</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">                    Connection,</span></span>
+<span class="line"><span style="color:#E1E4E8">                    Connection->ClientResponse,</span></span>
+<span class="line"><span style="color:#E1E4E8">                    URLString,</span></span>
+<span class="line"><span style="color:#E1E4E8">                    Connection->PlayerId,</span></span>
+<span class="line"><span style="color:#E1E4E8">                    OnlinePlatformNameString);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">                NetDriver->ServerConnection-></span><span style="color:#B392F0">FlushNet</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">            }</span></span>
+<span class="line"><span style="color:#F97583">            break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>可以在<code>DataChannel.h</code> 看到各个消息的格式。这里不赘述了。到<code>NMT_Login</code> 这一层，客户端会把玩家身份、登录选项等一系列消息发给服务器，之后服务器进入<code>PreLogin</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> AGameModeBase</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">PreLogin</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#B392F0"> FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Options</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#B392F0"> FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Address</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#B392F0"> FUniqueNetIdRepl</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> UniqueId</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#B392F0">    FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> ErrorMessage</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> bool</span><span style="color:#E1E4E8"> bUniqueIdCheckOk </span><span style="color:#F97583">=</span></span>
+<span class="line"><span style="color:#E1E4E8">        (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">UniqueId.</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">||</span><span style="color:#B392F0"> UOnlineEngineInterface</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">Get</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">IsCompatibleUniqueNetId</span><span style="color:#E1E4E8">(UniqueId));</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (bUniqueIdCheckOk)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        ErrorMessage </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> GameSession-></span><span style="color:#B392F0">ApproveLogin</span><span style="color:#E1E4E8">(Options);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    else</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        ErrorMessage </span><span style="color:#F97583">=</span><span style="color:#B392F0"> TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"incompatible_unique_net_id"</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> AGameModeBase</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">PreLoginAsync</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#B392F0"> FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Options</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#B392F0"> FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Address</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#B392F0"> FUniqueNetIdRepl</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> UniqueId</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#B392F0"> FOnPreLoginCompleteDelegate</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> OnComplete</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FString ErrorMessage;</span></span>
+<span class="line"><span style="color:#B392F0">    PreLogin</span><span style="color:#E1E4E8">(Options, Address, UniqueId, ErrorMessage);</span></span>
+<span class="line"><span style="color:#E1E4E8">    OnComplete.</span><span style="color:#B392F0">ExecuteIfBound</span><span style="color:#E1E4E8">(ErrorMessage);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>见上图的流程图，<code>PreLogin</code>这里做的事情也很浅，例如检查<code>UniqueId</code>，检查<code>URL Options</code>，如果通过了，调用<code>UWorld::WelcomePlayer</code> 发送<code>NMT_Welcome</code></p>
+<p>到目前为止，依然只是在做登录进场前的确认工作。这还不是“玩家进入游戏”，客户端还没有加载服务器指定地图，也还没有发送 <code>NMT_Join</code>。一旦确认连接参数和游戏准入等设置都没问题了，下一步才到正式登场。</p>
+<h2 id="三加载服务器地图join游戏">三、加载服务器地图、Join游戏</h2>
+<p>客户端收到<code>NMT_Welcome</code>后，会根据服务器下发的地图名加载Client World。等到LoadMap完成，客户端发送<code>NMT_Join</code> ，服务器收到信息后、创建出真正的<code>PlayerController</code> ，并进入<code>GameMode::Login</code>和<code>PostLogin</code></p>
+<h3 id="welcome后客户端loadmap"><code>Welcome</code>后客户端<code>LoadMap</code></h3>
+<p><code>NotifyControlMessage</code>接收到<code>NMT_Welcome</code>消息后，写入地图名字，然后设置<code>bSuccessfullyConnected = true</code> ，下一帧<code>UEngine::TickWorldTravel</code> 就会进入<code>PendingNetGame</code>的地图加载分支</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UPendingNetGame</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">NotifyControlMessage</span><span style="color:#E1E4E8">(...)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">		case</span><span style="color:#B392F0"> NMT_Welcome</span><span style="color:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#E1E4E8">		{</span></span>
+<span class="line"><span style="color:#F97583">			if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">FNetControlMessage</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">NMT_Welcome</span><span style="color:#E1E4E8">>::</span><span style="color:#B392F0">Receive</span><span style="color:#E1E4E8">(Bunch, URL.Map, GameName, RedirectURL))</span></span>
+<span class="line"><span style="color:#E1E4E8">			{</span></span>
+<span class="line"><span style="color:#E1E4E8">				</span></span>
+<span class="line"><span style="color:#E1E4E8">				FURL DefaultURL;</span></span>
+<span class="line"><span style="color:#E1E4E8">				FURL </span><span style="color:#B392F0">TempURL</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">DefaultURL, </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">URL.Map, TRAVEL_Partial);</span></span>
+<span class="line"><span style="color:#E1E4E8">				URL.Map </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> TempURL.Map;</span></span>
+<span class="line"><span style="color:#E1E4E8">				URL.RedirectURL </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> RedirectURL;</span></span>
+<span class="line"><span style="color:#E1E4E8">				URL.Op.</span><span style="color:#B392F0">Append</span><span style="color:#E1E4E8">(TempURL.Op);</span></span>
+<span class="line"><span style="color:#E1E4E8">					</span></span>
+<span class="line"><span style="color:#6A737D">				// We have successfully connected</span></span>
+<span class="line"><span style="color:#6A737D">				// TickWorldTravel will load the map and call LoadMapCompleted which eventually calls SendJoin</span></span>
+<span class="line"><span style="color:#E1E4E8">				bSuccessfullyConnected </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">			}</span></span>
+<span class="line"><span style="color:#E1E4E8">		}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// 下一帧进来</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UEngine</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">TickWorldTravel</span><span style="color:#E1E4E8">(...)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">	//...</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (Context.PendingNetGame </span><span style="color:#F97583">&#x26;&#x26;</span></span>
+<span class="line"><span style="color:#E1E4E8">    Context.PendingNetGame->bSuccessfullyConnected </span><span style="color:#F97583">&#x26;&#x26;</span></span>
+<span class="line"><span style="color:#F97583">    !</span><span style="color:#E1E4E8">Context.PendingNetGame->bSentJoinRequest </span><span style="color:#F97583">&#x26;&#x26;</span></span>
+<span class="line"><span style="color:#F97583">    !</span><span style="color:#E1E4E8">Context.PendingNetGame->bLoadedMapSuccessfully)</span></span>
+<span class="line"><span style="color:#E1E4E8">		{</span></span>
+<span class="line"><span style="color:#F97583">		    const</span><span style="color:#F97583"> bool</span><span style="color:#E1E4E8"> bLoadedMapSuccessfully </span><span style="color:#F97583">=</span></span>
+<span class="line"><span style="color:#B392F0">		        LoadMap</span><span style="color:#E1E4E8">(Context, Context.PendingNetGame->URL, Context.PendingNetGame, Error);</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#E1E4E8">		    Context.PendingNetGame-></span><span style="color:#B392F0">LoadMapCompleted</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, Context, bLoadedMapSuccessfully, Error);</span></span>
+<span class="line"><span style="color:#E1E4E8">		}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span></code></pre>
+<p>这里解释了<code>NMT_Join</code>并非在<code>NMT_Welcome</code> 就立刻发送，客户端需要先加载这张地图。</p>
+<h3 id="pendingnetdriver移到新world-创建临时playercontroller"><code>PendingNetDriver</code>移到新<code>World</code> 、创建临时<code>PlayerController</code></h3>
+<p>上文提到了服务器视角的<code>UEngine::LoadMap</code> ,客户端这里在这里一些差别。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> UEngine</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">LoadMap</span><span style="color:#E1E4E8">( </span><span style="color:#B392F0">FWorldContext</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> WorldContext</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FURL</span><span style="color:#FFAB70"> URL</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">class</span><span style="color:#B392F0"> UPendingNetGame</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Pending</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Error</span><span style="color:#E1E4E8"> )</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">		// 1. 卸载旧world、关闭旧NetDriver</span></span>
+<span class="line"><span style="color:#6A737D">		// 2. 加载地图包,把新world设置为当前world</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#6A737D">		// 3. Handle pending level.</span></span>
+<span class="line"><span style="color:#F97583">		if</span><span style="color:#E1E4E8">( Pending )</span></span>
+<span class="line"><span style="color:#E1E4E8">		{</span></span>
+<span class="line"><span style="color:#B392F0">			MovePendingLevel</span><span style="color:#E1E4E8">(WorldContext);</span></span>
+<span class="line"><span style="color:#E1E4E8">		}</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#6A737D">	  // 4. DS 上会创建 GameMode；客户端加载网络地图时这里会因为 NM_Client 跳过。</span></span>
+<span class="line"><span style="color:#E1E4E8">	  WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">SetGameMode</span><span style="color:#E1E4E8">(URL);</span></span>
+<span class="line"><span style="color:#E1E4E8">	  </span></span>
+<span class="line"><span style="color:#6A737D">	  // 5. 客户端这里创建的是一个临时的PlayerController</span></span>
+<span class="line"><span style="color:#6A737D">	  // 这不是服务器Login后创建的权威PlayerController</span></span>
+<span class="line"><span style="color:#F97583">	  for</span><span style="color:#E1E4E8"> (ULocalPlayer</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> LocalPlayer : WorldContext.OwningGameInstance-></span><span style="color:#B392F0">GetLocalPlayers</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">	  {</span></span>
+<span class="line"><span style="color:#E1E4E8">	      LocalPlayer-></span><span style="color:#B392F0">SpawnPlayActor</span><span style="color:#E1E4E8">(URL.</span><span style="color:#B392F0">ToString</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">1</span><span style="color:#E1E4E8">), Error, WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">	  }</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#E1E4E8">	  WorldContext.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">BeginPlay</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">		 </span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>大致流程一致，卸载旧World，加载新World并设置好，客户端dia<code>MovePendingLevel</code> 把原来挂在 <code>PendingNetGame</code> 上的 <code>PendingNetDriver</code> 移到新加载出来的 <code>Client World</code> 上，改名为 <code>GameNetDriver</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UEngine</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">MovePendingLevel</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FWorldContext</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Context</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">		//...</span></span>
+<span class="line"><span style="color:#E1E4E8">    Context.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">SetNetDriver</span><span style="color:#E1E4E8">(Context.PendingNetGame->NetDriver);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    UNetDriver</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> NetDriver </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Context.PendingNetGame->NetDriver;</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (NetDriver)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        NetDriver-></span><span style="color:#B392F0">SetNetDriverName</span><span style="color:#E1E4E8">(NAME_GameNetDriver);</span></span>
+<span class="line"><span style="color:#E1E4E8">        NetDriver-></span><span style="color:#B392F0">SetWorld</span><span style="color:#E1E4E8">(Context.</span><span style="color:#B392F0">World</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#6A737D">		//...</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这里要理解到新世界的<code>NetDriver</code> 就是旧世界（大厅里创建出来的那个），NetDriver上还挂着和服务器连接<code>ServerConnection</code>，也一并挪过去了，因此相应的连接信息得以转移保留。</p>
+<p>继续看<code>LoadMap</code> ，客户端加载地图时，还会在这里创建出一个临时的<code>PlayerController</code> ，这也很好理解，引擎默认<code>Player</code>总是能拿到一个有效的<code>PlayerController</code> ，因此在客户端等待服务器的权威<code>PlayerController</code>复制回来前，会先放一个本地的dummy。大段注释这里写的也很清楚了。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"></span>
+<span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> ULocalPlayer</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">SpawnPlayActor</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">const</span><span style="color:#B392F0"> FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> URL</span><span style="color:#E1E4E8">,</span><span style="color:#B392F0">FString</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> OutError</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">UWorld</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> InWorld</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">InWorld-></span><span style="color:#B392F0">IsNetMode</span><span style="color:#E1E4E8">(NM_Client))</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#E1E4E8">		PlayerController </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> InWorld-></span><span style="color:#B392F0">SpawnPlayActor</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, ROLE_SimulatedProxy, PlayerURL, UniqueId, OutError, PlayerIndex);</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"><span style="color:#F97583">	else</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#6A737D">		// Statically bind to the specified player controller</span></span>
+<span class="line"><span style="color:#E1E4E8">		UClass</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> PCClass </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PendingLevelPlayerControllerClass;</span></span>
+<span class="line"><span style="color:#6A737D">		// The PlayerController gets replicated from the client though the engine assumes that every Player always has</span></span>
+<span class="line"><span style="color:#6A737D">		// a valid PlayerController so we spawn a dummy one that is going to be replaced later.</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">		//</span></span>
+<span class="line"><span style="color:#6A737D">		// Look at APlayerController::OnActorChannelOpen + UNetConnection::HandleClientPlayer for the code the</span></span>
+<span class="line"><span style="color:#6A737D">		// replaces this fake player controller with the real replicated one from the server</span></span>
+<span class="line"><span style="color:#6A737D">		//</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">		FActorSpawnParameters SpawnInfo;</span></span>
+<span class="line"><span style="color:#E1E4E8">		SpawnInfo.ObjectFlags </span><span style="color:#F97583">|=</span><span style="color:#E1E4E8"> RF_Transient;</span><span style="color:#6A737D">	// We never want to save player controllers into a map</span></span>
+<span class="line"><span style="color:#E1E4E8">		PlayerController </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> InWorld->SpawnActor</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">APlayerController</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(PCClass, SpawnInfo);</span></span>
+<span class="line"><span style="color:#F97583">		const</span><span style="color:#E1E4E8"> int32 PlayerIndex </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> GEngine-></span><span style="color:#B392F0">GetGamePlayers</span><span style="color:#E1E4E8">(InWorld).</span><span style="color:#B392F0">Find</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">		PlayerController->NetPlayerIndex </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PlayerIndex;</span></span>
+<span class="line"><span style="color:#E1E4E8">		PlayerController->Player </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> this</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p><code>UNetConnection::HandleClientPlayer</code> 会找到本地LocalPlayer，把复制来的真实的PlayerController绑定到<code>LocalPlayer</code>和<code>ServerConnection</code>上。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UNetConnection</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">HandleClientPlayer</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">APlayerController</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> PC</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">UNetConnection</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> NetConnection</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    ULocalPlayer</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> LocalPlayer </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ...;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">		// 销毁</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (LocalPlayer->PlayerController </span></span>
+<span class="line"><span style="color:#F97583">	    &#x26;&#x26;</span><span style="color:#E1E4E8"> LocalPlayer->PlayerController-></span><span style="color:#B392F0">GetLevel</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> PC-></span><span style="color:#B392F0">GetLevel</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#6A737D">        // local placeholder PC while waiting for connection to be established</span></span>
+<span class="line"><span style="color:#E1E4E8">        LocalPlayer->PlayerController-></span><span style="color:#B392F0">GetWorld</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">DestroyActor</span><span style="color:#E1E4E8">(LocalPlayer->PlayerController);</span></span>
+<span class="line"><span style="color:#E1E4E8">        LocalPlayer->PlayerController </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> NULL</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">		// 绑定</span></span>
+<span class="line"><span style="color:#E1E4E8">    PC-></span><span style="color:#B392F0">SetRole</span><span style="color:#E1E4E8">(ROLE_AutonomousProxy);</span></span>
+<span class="line"><span style="color:#E1E4E8">    PC->NetConnection </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> NetConnection;</span></span>
+<span class="line"><span style="color:#E1E4E8">    PC-></span><span style="color:#B392F0">SetPlayer</span><span style="color:#E1E4E8">(LocalPlayer);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    PlayerController </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PC;</span></span>
+<span class="line"><span style="color:#E1E4E8">    OwningActor </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PC;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>好了，总之客户端地图加载成功后，<code>PendingNetGame::LoadMapCompleted</code> 会设置<code>bLoadedMapSuccessfully</code> ，随后 <code>TickWorldTravel</code> 调用 <code>TravelCompleted</code>
+并最终调用<code>PendingNetGame::SendJoin</code> 发送<code>NMT_Join</code>消息，告诉服务器我已经加载好了。</p>
+<h3 id="服务器spawnplayeractor">服务器<code>SpawnPlayerActor</code></h3>
+<p>服务器收到<code>NMT_Join</code> 后，会检查当前连接还没有<code>PlayerController</code> ，然后调用<code>SpawnPlayActor</code> ，这里是登录流程真正进入GamePlayer的地方。到这里，服务器侧才算真正有了这个玩家。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">APlayerController</span><span style="color:#F97583">*</span><span style="color:#B392F0"> UWorld</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">SpawnPlayActor</span><span style="color:#E1E4E8">(...)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">		// ...</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (AGameModeBase</span><span style="color:#F97583">*</span><span style="color:#F97583"> const</span><span style="color:#E1E4E8"> GameMode </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetAuthGameMode</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        APlayerController</span><span style="color:#F97583">*</span><span style="color:#F97583"> const</span><span style="color:#E1E4E8"> NewPlayerController </span><span style="color:#F97583">=</span></span>
+<span class="line"><span style="color:#E1E4E8">            GameMode-></span><span style="color:#B392F0">Login</span><span style="color:#E1E4E8">(NewPlayer, RemoteRole, </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">InURL.Portal, Options, UniqueId, Error);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (NewPlayerController </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> NULL</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            return</span><span style="color:#79B8FF"> NULL</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        NewPlayerController-></span><span style="color:#B392F0">SetRole</span><span style="color:#E1E4E8">(ROLE_Authority);</span></span>
+<span class="line"><span style="color:#E1E4E8">        NewPlayerController-></span><span style="color:#B392F0">SetReplicates</span><span style="color:#E1E4E8">(RemoteRole </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> ROLE_None);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (RemoteRole </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> ROLE_AutonomousProxy)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#E1E4E8">            NewPlayerController-></span><span style="color:#B392F0">SetAutonomousProxy</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        NewPlayerController-></span><span style="color:#B392F0">SetPlayer</span><span style="color:#E1E4E8">(NewPlayer);</span></span>
+<span class="line"><span style="color:#E1E4E8">        GameMode-></span><span style="color:#B392F0">PostLogin</span><span style="color:#E1E4E8">(NewPlayerController);</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#E1E4E8"> NewPlayerController;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<ul>
+<li><code>GameMode::Login</code> 创建出服务器的权威<code>PlayerController</code></li>
+<li><code>GameMode::PostLogin</code> 玩家有了服务器的PC后，可以做Gameplayer初始化的逻辑了</li>
+</ul>
+<h2 id="总结">总结</h2>
+<ol>
+<li>DS 加载地图时，先创建 GameMode。GameMode 只存在于服务端。</li>
+<li>GameMode 初始化时创建 GameState。GameState 是复制对象，客户端加载服务器地图并建立复制后，会从服务器同步到客户端。</li>
+<li>客户端LoadMap 过程中会创建一个临时 PlayerController，给 LocalPlayer / Viewport / 输入占位。</li>
+<li>客户端 LoadMap 完成后发送 NMT_Join。DS 收到 NMT_Join 后，才创建服务器权威 PlayerController。</li>
+<li>服务器 PlayerController 初始化时创建 PlayerState。PlayerState 随 PlayerController 一起进入复制体系，之后客户端会同步到这个玩家的 PlayerState。</li>
+<li>PostLogin 之后默认调用 RestartPlayer。这时服务器创建 Pawn，并让 PlayerController Possess 它；之后 Pawn 再复制到客户端。</li>
+</ol> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-05/GAS设计解析一：ASC与Attribute.html"> <span>← NEWER</span> <strong>GAS设计解析一：ASC与Attribute</strong> </a> <a class="article-pagination-next" href="../../posts/2026-05/UE网络笔记一：网络总览.html"> <span>OLDER →</span> <strong>UE网络笔记一：网络总览</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-08/联机游戏开发指南笔记（二）.html">联机游戏开发指南笔记（二）</a><a href="../../posts/2026-07/联机游戏开发指南笔记（一）.html">联机游戏开发指南笔记（一）</a><a href="../../posts/2026-06/UE网络笔记三：属性同步机制.html">UE网络笔记三：属性同步机制</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#零登录流程"> 零：登录流程 </a><a class="article-toc-link depth-3" href="#概念解析"> 概念解析 </a><a class="article-toc-link depth-2" href="#一ds启动loadmapgamemode-和-listen"> 一、DS启动：LoadMap、GameMode 和 Listen </a><a class="article-toc-link depth-2" href="#二客户端ds握手连接"> 二、客户端DS握手连接 </a><a class="article-toc-link depth-3" href="#clienttravel"> ClientTravel </a><a class="article-toc-link depth-3" href="#uenginetickworldtravel"> UEngine::TickWorldTravel </a><a class="article-toc-link depth-3" href="#login处理"> Login处理 </a><a class="article-toc-link depth-2" href="#三加载服务器地图join游戏"> 三、加载服务器地图、Join游戏 </a><a class="article-toc-link depth-3" href="#welcome后客户端loadmap"> Welcome后客户端LoadMap </a><a class="article-toc-link depth-3" href="#pendingnetdriver移到新world-创建临时playercontroller"> PendingNetDriver移到新World 、创建临时PlayerController </a><a class="article-toc-link depth-3" href="#服务器spawnplayeractor"> 服务器SpawnPlayerActor </a><a class="article-toc-link depth-2" href="#总结"> 总结 </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

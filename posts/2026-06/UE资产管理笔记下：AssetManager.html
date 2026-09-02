@@ -1,0 +1,120 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="资产管理解析"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8B%EF%BC%9AAssetManager.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="UE资产管理笔记下：AssetManager | Elysium"><meta property="og:description" content="资产管理解析"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8B%EF%BC%9AAssetManager.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-06-13"><meta property="article:tag" content="Note"><title>UE资产管理笔记下：AssetManager | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=note">Note</a> <span>2026.06.13</span>  <span>4 MIN READ</span> </div> <h1 id="ue资产管理笔记下assetmanager">UE资产管理笔记下：AssetManager</h1>
+<p>这篇主要是介绍UE里有这个AssetManager可以进行资产管理，也是UE推荐的，对Primary Asset进行资产管理的主要方式，但对于实现上就不做过多探究了。</p>
+<p><code>AssetManager</code>提供了一个更系统的能力，对于一部分资源有明确的业务身份的，例如道具、技能、角色等等配置，AssetManager能做统一的扫描、查询，异步加卸载等管理。这也是UE推荐的资产管理方式</p>
+<h2 id="如何使用">如何使用</h2>
+<p>假如我们有一张物品配置表，可能是这样的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#E1E4E8"> FItemRow : public FTableRowBase</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#B392F0">GENERATED_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditAnywhere, BlueprintReadOnly)</span></span>
+<span class="line"><span style="color:#E1E4E8">    FName DisplayName;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditAnywhere, BlueprintReadOnly)</span></span>
+<span class="line"><span style="color:#E1E4E8">    TSoftObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UTexture2D</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Icon;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditAnywhere, BlueprintReadOnly)</span></span>
+<span class="line"><span style="color:#E1E4E8">    TSoftObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UStaticMesh</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Mesh;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>非常简单，这里也使用了软引用，加载表的时候不会立刻加载图标、模型。可能到了业务层，我们会自己拿到<code>TSoftObjectPtr</code>，通过同步或者异步加载Load进来，这块内容就会散落到一堆的业务代码中。</p>
+<p>而AssetManager的管理方式是把每个物品定义成一个 <code>Primary Asset</code>，然后交给 <code>AssetManager</code> 管理。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#B392F0">UCLASS</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#E1E4E8">class UItemDefinition : public UPrimaryDataAsset</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    GENERATED_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">public:</span></span>
+<span class="line"><span style="color:#F97583">    static</span><span style="color:#F97583"> const</span><span style="color:#E1E4E8"> FPrimaryAssetType AssetType;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    virtual FPrimaryAssetId </span><span style="color:#B392F0">GetPrimaryAssetId</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> override</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#B392F0"> FPrimaryAssetId</span><span style="color:#E1E4E8">(AssetType, </span><span style="color:#B392F0">GetFName</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditDefaultsOnly, BlueprintReadOnly)</span></span>
+<span class="line"><span style="color:#E1E4E8">    FText DisplayName;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditDefaultsOnly, BlueprintReadOnly, meta </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (AssetBundles </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> "UI"</span><span style="color:#E1E4E8">))</span></span>
+<span class="line"><span style="color:#E1E4E8">    TSoftObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UTexture2D</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Icon;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditDefaultsOnly, BlueprintReadOnly, meta </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (AssetBundles </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> "Game"</span><span style="color:#E1E4E8">))</span></span>
+<span class="line"><span style="color:#E1E4E8">    TSoftObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UStaticMesh</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Mesh;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">const</span><span style="color:#E1E4E8"> FPrimaryAssetType UItemDefinition::</span><span style="color:#B392F0">AssetType</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"Item"</span><span style="color:#E1E4E8">));</span></span></code></pre>
+<p>然后在Content目录下创建每个物品的DA。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">/</span><span style="color:#E1E4E8">Game</span><span style="color:#F97583">/</span><span style="color:#E1E4E8">Data</span><span style="color:#F97583">/</span><span style="color:#E1E4E8">Items</span><span style="color:#F97583">/</span><span style="color:#E1E4E8">DA_Item_Sword_A</span></span>
+<span class="line"><span style="color:#F97583">/</span><span style="color:#E1E4E8">Game</span><span style="color:#F97583">/</span><span style="color:#E1E4E8">Data</span><span style="color:#F97583">/</span><span style="color:#E1E4E8">Items</span><span style="color:#F97583">/</span><span style="color:#E1E4E8">DA_Item_Sword_B</span></span></code></pre>
+<p>然后可以在项目配置里配置目录进行自动扫描</p>
+<p><img  src="/_astro/image-20260613231058476.BinLlQ7O_22s3rX.webp" alt="image-20260613231058476" loading="lazy" decoding="async" width="1716" height="855"></p>
+<p>或者是在.ini中配置</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>+PrimaryAssetTypesToScan=(PrimaryAssetType="Item",AssetBaseClass="/Script/PCGDungeon.ItemDefinition",bHasBlueprintClasses=False,bIsEditorOnly=False,Directories=((Path="/Game/Data/Items")),SpecificAssets=,Rules=(Priority=1,ChunkId=-1,bApplyRecursively=True,CookRule=Unknown))</span></span></code></pre>
+<p>之后，业务层就不需要使用资源路径，而是用<code>FPrimaryAssetId ItemId</code>来表达物品，例如</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Item:DA_Item_Sword_A</span></span></code></pre>
+<p>我们看UItemDefinition的资产软引用上有<code>AssetBundles</code>的元数据标记，这是用来告诉AssetManager，这个资产属于某个加载分组。例如这里<code>Icon</code>属于<code>UI</code>这个Bundle，而<code>Mesh</code>属于<code>Game</code>这个Bundle，当加载Primary Asset时，可以指定Bundle进行一组资源的加载。</p>
+<p>例如，当背包界面要显示图标时，我们只加载<code>UI</code>Bundle：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> UItemSubsystem::</span><span style="color:#B392F0">LoadItemForUI</span><span style="color:#E1E4E8">(FPrimaryAssetId </span><span style="color:#FFAB70">ItemId</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    UAssetManager::Get</span><span style="color:#E1E4E8">().</span><span style="color:#B392F0">LoadPrimaryAsset</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">        ItemId,</span></span>
+<span class="line"><span style="color:#E1E4E8">        { </span><span style="color:#B392F0">FName</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"UI"</span><span style="color:#E1E4E8">) },</span></span>
+<span class="line"><span style="color:#B392F0">        FStreamableDelegate::CreateUObject</span><span style="color:#E1E4E8">(this, </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">UItemSubsystem::OnItemUILoaded, ItemId));</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> UItemSubsystem::</span><span style="color:#B392F0">OnItemUILoaded</span><span style="color:#E1E4E8">(FPrimaryAssetId </span><span style="color:#FFAB70">ItemId</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    UItemDefinition</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Item </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Cast</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UItemDefinition</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#B392F0">        UAssetManager::Get</span><span style="color:#E1E4E8">().</span><span style="color:#B392F0">GetPrimaryAssetObject</span><span style="color:#E1E4E8">(ItemId));</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">Item) </span><span style="color:#F97583">return</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    UTexture2D</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Icon </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Item->Icon.</span><span style="color:#B392F0">Get</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>当装备到角色身上，需要使用模型时，可以再加载<code>Game</code>Bundle</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">UAssetManager::</span><span style="color:#B392F0">Get</span><span style="color:#E1E4E8">().</span><span style="color:#B392F0">LoadPrimaryAsset</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">    ItemId,</span></span>
+<span class="line"><span style="color:#E1E4E8">    { </span><span style="color:#B392F0">FName</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"Game"</span><span style="color:#E1E4E8">) },</span></span>
+<span class="line"><span style="color:#B392F0">    FStreamableDelegate::CreateUObject</span><span style="color:#E1E4E8">(this, </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">UItemSubsystem::OnItemGameLoaded, ItemId));</span></span></code></pre>
+<p>不用时，可以直接卸载</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">UAssetManager::</span><span style="color:#B392F0">Get</span><span style="color:#E1E4E8">().</span><span style="color:#B392F0">UnloadPrimaryAsset</span><span style="color:#E1E4E8">(ItemId);</span></span></code></pre>
+<p>这套组织方式最大的好处就是，物品有了一个稳定的身份，即<code>FPrimaryAssetId</code>。大资源仍然是软引用，业务可以根据不同的使用场景可以通过Bundle进行区分，统一进行加载。加卸载都可以通过<code>AssetManager</code>进行统一管理。</p>
+<p>当然，这种组织方式也对于大批量修改物品也很不方便，可以想象，假如我们有一万个物品，就要在版本管理中塞入一万个文件小碎片，而且也无法支持批量编辑和Excel等工具进行导入导出。所以这种组织方式更适合某种带有明确业务身份的资源型配置，而不适合纯数值表，实际使用上要结合具体业务具体分析了。</p>
+<h2 id="名词解释">名词解释</h2>
+<ul>
+<li>
+<p><code>Primary Asset</code> 可以理解为项目主动登记、主动管理的入口资产。它必须能给出一个稳定的 <code>FPrimaryAssetId</code>，例如上面的DA_Item_Sword_A，就是一个Primary Asset。代表一个具体的物品</p>
+</li>
+<li>
+<p><code>Secondary Asset</code> 是被 Primary Asset 引用或管理的附属资源。面的 <code>Icon</code>、<code>Mesh</code>、 通常就是 Secondary Asset。</p>
+</li>
+<li>
+<p><code>FPrimaryAssetId</code>则是 Primary Asset 的稳定身份，由类型和名字组成</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#E1E4E8"> FPrimaryAssetId</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FPrimaryAssetType PrimaryAssetType;</span></span>
+<span class="line"><span style="color:#E1E4E8">    FName PrimaryAssetName;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+</li>
+<li>
+<p>Bundle 用来表达“同一个 Primary Asset 在不同使用场景下要加载哪些附属资源”。重点是表达加载意图，上文已经说过了。</p>
+</li>
+</ul>
+<h2 id="primaryassetlabel">PrimaryAssetLabel</h2>
+<p>现在我们有了一批DA作为节点，用来管理一组资产关系，而<code>PrimaryAssetLabel</code>其也是一个资产，它的作用是专门给资产打上管理标签，以便给Asset Manager/Cook/Chunk进行分包的。简单来说，它表达了哪些资产归它管理、Cook规则是什么、应该放进哪个Chunk、是否包含递归依赖等等。</p>
+<ul>
+<li>强制一些资源被Cook：例如一些动态加载的资源，普通应用链里找不到，可以直接标出来然后设置Cook Rule = Always Cook</li>
+<li>资源分包/DLC/Pak Chunk等：例如可以分成Chunk 0：资源包、Chunk 1:武器资源、Chunk 2:角色皮肤。通过Label给某批资源设置Chunk ID</li>
+</ul>
+<p>还是以上面这个例子，我们直接在/Game/Data/Items目录下创建一个<code>PrimaryAssetLabel</code>，命名为PAL_Weapon，然后像如下配置</p>
+<p><img  src="/_astro/image-20260614113423270.Cyo5ZJZS_27hqU8.webp" alt="image-20260614113423270" loading="lazy" decoding="async" width="1863" height="771"></p>
+<ul>
+<li>Chunk ID填1，就是它管理的资源都进Chunk 1包。</li>
+<li>Label Assets in My Directory： 勾上后，会标记这个 Label 所在文件夹及子文件夹里的资源。</li>
+<li>Apply Recursively : 是否递归应用到依赖资源</li>
+<li>Cook Rule ： 是否强制 Cook</li>
+</ul>
+<p>我们可以在RefrenceViewer里打开Show Manager References，就可以看到资产管理的引用关系，也可以在Asset Audit里看更详细的信息。</p>
+<p><img  src="/_astro/image-20260614113817975.CamQCRcw_2i0DoU.webp" alt="image-20260614113817975" loading="lazy" decoding="async" width="3441" height="1692"></p>
+<p>当然如何分包管理资源是另一个更系统也更需要实际落地经验的活，这里暂时就介绍到这里。</p> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-06/UE5新技术框架速查.html"> <span>← NEWER</span> <strong>UE5新技术框架速查</strong> </a> <a class="article-pagination-next" href="../../posts/2026-06/UE资产管理笔记上：资产，加载及数据表.html"> <span>OLDER →</span> <strong>UE资产管理笔记上：资产，加载及数据表</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-06/UE智能指针小结.html">UE智能指针小结</a><a href="../../posts/2026-06/UE5新技术框架速查.html">UE5新技术框架速查</a><a href="../../posts/2026-06/UE资产管理笔记上：资产，加载及数据表.html">UE资产管理笔记上：资产，加载及数据表</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#如何使用"> 如何使用 </a><a class="article-toc-link depth-2" href="#名词解释"> 名词解释 </a><a class="article-toc-link depth-2" href="#primaryassetlabel"> PrimaryAssetLabel </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

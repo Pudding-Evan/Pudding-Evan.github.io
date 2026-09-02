@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <title>Elysium</title>
+    <link>https://pudding-evan.github.io/</link>
+    <description>Evan 的 Unreal Engine、Gameplay 与游戏开发笔记。</description>
+    <language>zh-CN</language>
+    <item>
+        <title>联机游戏开发指南笔记（二）</title>
+        <link>https://pudding-evan.github.io/posts/2026-08/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%BA%8C%EF%BC%89.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-08/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%BA%8C%EF%BC%89.html</guid>
+        <pubDate>Sat, 01 Aug 2026 16:00:00 GMT</pubDate>
+        <description>网络开发基础知识框架</description>
+        <category>Net</category>
+      </item><item>
+        <title>联机游戏开发指南笔记（一）</title>
+        <link>https://pudding-evan.github.io/posts/2026-07/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%B8%80%EF%BC%89.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-07/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%B8%80%EF%BC%89.html</guid>
+        <pubDate>Fri, 17 Jul 2026 16:00:00 GMT</pubDate>
+        <description>网络开发基础知识框架</description>
+        <category>Net</category>
+      </item><item>
+        <title>第五年</title>
+        <link>https://pudding-evan.github.io/posts/2026-07/%E7%AC%AC%E4%BA%94%E5%B9%B4.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-07/%E7%AC%AC%E4%BA%94%E5%B9%B4.html</guid>
+        <pubDate>Sun, 12 Jul 2026 16:00:00 GMT</pubDate>
+        <description>第五年</description>
+        
+      </item><item>
+        <title>UE智能指针小结</title>
+        <link>https://pudding-evan.github.io/posts/2026-06/UE%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88%E5%B0%8F%E7%BB%93.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-06/UE%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88%E5%B0%8F%E7%BB%93.html</guid>
+        <pubDate>Sat, 27 Jun 2026 16:00:00 GMT</pubDate>
+        <description>重新看《Effective Modern C++》过程中，又有了一些新的理解，所以说经典书籍还是得常看常新。因此也对UE自己实现的智能指针有了这么几个疑惑。</description>
+        <category>Note</category>
+      </item><item>
+        <title>UE5新技术框架速查</title>
+        <link>https://pudding-evan.github.io/posts/2026-06/UE5%E6%96%B0%E6%8A%80%E6%9C%AF%E6%A1%86%E6%9E%B6%E9%80%9F%E6%9F%A5.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-06/UE5%E6%96%B0%E6%8A%80%E6%9C%AF%E6%A1%86%E6%9E%B6%E9%80%9F%E6%9F%A5.html</guid>
+        <pubDate>Fri, 19 Jun 2026 16:00:00 GMT</pubDate>
+        <description>GDC上有一篇关于如何在虚幻5引擎里保持60帧的演讲，详细讲述了虚幻引擎5从最初版本到现在的性能演进历史，以及主要开发的工具内容相关，UE5.8推出后，也说明可能是最后一个5开头的版本。主要以GDC这篇提到的世界构建 + Gameplay内容为主，综合其他实用内容简单整理一下</description>
+        <category>Note</category>
+      </item><item>
+        <title>UE资产管理笔记下：AssetManager</title>
+        <link>https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8B%EF%BC%9AAssetManager.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8B%EF%BC%9AAssetManager.html</guid>
+        <pubDate>Fri, 12 Jun 2026 16:00:00 GMT</pubDate>
+        <description>资产管理解析</description>
+        <category>Note</category>
+      </item><item>
+        <title>UE资产管理笔记上：资产，加载及数据表</title>
+        <link>https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8A%EF%BC%9A%E8%B5%84%E4%BA%A7%EF%BC%8C%E5%8A%A0%E8%BD%BD%E5%8F%8A%E6%95%B0%E6%8D%AE%E8%A1%A8.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8A%EF%BC%9A%E8%B5%84%E4%BA%A7%EF%BC%8C%E5%8A%A0%E8%BD%BD%E5%8F%8A%E6%95%B0%E6%8D%AE%E8%A1%A8.html</guid>
+        <pubDate>Thu, 11 Jun 2026 16:00:00 GMT</pubDate>
+        <description>资产管理解析</description>
+        <category>Note</category>
+      </item><item>
+        <title>UE网络笔记三：属性同步机制</title>
+        <link>https://pudding-evan.github.io/posts/2026-06/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%89%EF%BC%9A%E5%B1%9E%E6%80%A7%E5%90%8C%E6%AD%A5%E6%9C%BA%E5%88%B6.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-06/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%89%EF%BC%9A%E5%B1%9E%E6%80%A7%E5%90%8C%E6%AD%A5%E6%9C%BA%E5%88%B6.html</guid>
+        <pubDate>Sat, 06 Jun 2026 16:00:00 GMT</pubDate>
+        <description>施工中...</description>
+        <category>Net</category>
+      </item><item>
+        <title>GAS设计解析四：GA与GameplayTag</title>
+        <link>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E5%9B%9B%EF%BC%9AGA%E4%B8%8EGameplayTag.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E5%9B%9B%EF%BC%9AGA%E4%B8%8EGameplayTag.html</guid>
+        <pubDate>Sat, 30 May 2026 16:00:00 GMT</pubDate>
+        <description>GameplayAbility 与 GameplayTag</description>
+        <category>GAS</category>
+      </item><item>
+        <title>GAS设计解析五：GAS预测</title>
+        <link>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%BA%94%EF%BC%9AGAS%E9%A2%84%E6%B5%8B.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%BA%94%EF%BC%9AGAS%E9%A2%84%E6%B5%8B.html</guid>
+        <pubDate>Sat, 30 May 2026 16:00:00 GMT</pubDate>
+        <description>GAS 预测</description>
+        <category>GAS</category>
+      </item><item>
+        <title>GAS设计解析三：GE属性修改案例</title>
+        <link>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%B8%89%EF%BC%9AGE%E5%B1%9E%E6%80%A7%E4%BF%AE%E6%94%B9%E6%A1%88%E4%BE%8B.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%B8%89%EF%BC%9AGE%E5%B1%9E%E6%80%A7%E4%BF%AE%E6%94%B9%E6%A1%88%E4%BE%8B.html</guid>
+        <pubDate>Fri, 29 May 2026 16:00:00 GMT</pubDate>
+        <description>GE 属性修改案例</description>
+        <category>GAS</category>
+      </item><item>
+        <title>GAS设计解析二：GameplayEffect</title>
+        <link>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%BA%8C%EF%BC%9AGameplayEffect.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%BA%8C%EF%BC%9AGameplayEffect.html</guid>
+        <pubDate>Thu, 28 May 2026 16:00:00 GMT</pubDate>
+        <description>GameplayEffect</description>
+        <category>GAS</category>
+      </item><item>
+        <title>GAS设计解析一：ASC与Attribute</title>
+        <link>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%B8%80%EF%BC%9AASC%E4%B8%8EAttribute.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%B8%80%EF%BC%9AASC%E4%B8%8EAttribute.html</guid>
+        <pubDate>Thu, 28 May 2026 16:00:00 GMT</pubDate>
+        <description>ASC 与 Attribute</description>
+        <category>GAS</category>
+      </item><item>
+        <title>UE网络笔记二：DS和客户端连接</title>
+        <link>https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%BA%8C%EF%BC%9ADS%E5%92%8C%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%BF%9E%E6%8E%A5.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%BA%8C%EF%BC%9ADS%E5%92%8C%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%BF%9E%E6%8E%A5.html</guid>
+        <pubDate>Wed, 27 May 2026 16:00:00 GMT</pubDate>
+        <description>DS 和客户端连接流程梳理。</description>
+        <category>Net</category>
+      </item><item>
+        <title>UE网络笔记一：网络总览</title>
+        <link>https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%80%EF%BC%9A%E7%BD%91%E7%BB%9C%E6%80%BB%E8%A7%88.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%80%EF%BC%9A%E7%BD%91%E7%BB%9C%E6%80%BB%E8%A7%88.html</guid>
+        <pubDate>Thu, 21 May 2026 16:00:00 GMT</pubDate>
+        <description>网络内容总览</description>
+        <category>Net</category>
+      </item><item>
+        <title>第三人称无缝传送门</title>
+        <link>https://pudding-evan.github.io/posts/2026-02/%E7%AC%AC%E4%B8%89%E4%BA%BA%E7%A7%B0%E6%97%A0%E7%BC%9D%E4%BC%A0%E9%80%81%E9%97%A8.html</link>
+        <guid>https://pudding-evan.github.io/posts/2026-02/%E7%AC%AC%E4%B8%89%E4%BA%BA%E7%A7%B0%E6%97%A0%E7%BC%9D%E4%BC%A0%E9%80%81%E9%97%A8.html</guid>
+        <pubDate>Tue, 10 Feb 2026 16:00:00 GMT</pubDate>
+        <description>记录第三人称无缝传送门的原理和工程实现。</description>
+        <category>Note</category>
+      </item>
+  </channel>
+</rss>

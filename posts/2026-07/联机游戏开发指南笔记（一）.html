@@ -1,0 +1,248 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="网络开发基础知识框架"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-07/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%B8%80%EF%BC%89.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="联机游戏开发指南笔记（一） | Elysium"><meta property="og:description" content="网络开发基础知识框架"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-07/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%B8%80%EF%BC%89.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-07-18"><meta property="article:tag" content="Net"><title>联机游戏开发指南笔记（一） | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=net">Net</a> <span>2026.07.18</span>  <span>8 MIN READ</span> </div> <h1 id="联机游戏开发指南笔记一">联机游戏开发指南笔记（一）</h1>
+<p>主要内容来自《联机游戏开发完全指南》，整理简单的笔记自查对照</p>
+<h2 id="联机基础">联机基础</h2>
+<h3 id="tcpip-模型">TCP/IP 模型</h3>
+<ul>
+<li>应用层
+<ul>
+<li>为软件提供服务：定义数据的格式和含义</li>
+<li>DHCP：动态主机配置协议，为子网中的每台主机分配唯一的 IPv4 地址</li>
+<li>DNS：将域名请求转换为 IP 地址</li>
+</ul>
+</li>
+<li>传输层
+<ul>
+<li>端口：不同软件使用不同端口收发数据</li>
+<li>传输层协议：TCP/UDP</li>
+</ul>
+</li>
+<li>网络层
+<ul>
+<li>用于解决 MAC 地址不灵活、不同网络之间需要连接，以及支持不同链路等问题</li>
+<li>逻辑寻址：通过 IP 协议和 IP 地址，标识设备在互联网中的逻辑地址</li>
+<li>路由：通过路由表为数据包选择最佳路径</li>
+<li>IPv4/IPv6</li>
+</ul>
+</li>
+<li>链路层
+<ul>
+<li>本地寻址（MAC 地址）：寻找设备</li>
+<li>数据帧的组成和校验</li>
+</ul>
+</li>
+<li>物理层：网线、光纤、Wi-Fi</li>
+</ul>
+<h3 id="socket">Socket</h3>
+<p>伯克利套接字是一套网络编程接口标准。</p>
+<ul>
+<li><code>WSAStartup</code>/<code>WSACleanup</code>：初始化 Winsock（Linux、macOS 不需要）</li>
+<li><code>socket</code>：文件描述符，也是数据通信的起点</li>
+<li><code>close</code>：关闭 Socket</li>
+<li><code>bind</code>：设置地址和端口号</li>
+<li><code>listen</code>：监听连接</li>
+<li><code>accept</code>：接收连接并创建新的 Socket</li>
+<li><code>connect</code>：客户端主动发起连接，需要服务器执行 <code>accept</code></li>
+<li><code>send</code>/<code>recv</code>：在已经建立的连接上，通过缓冲区收发数据</li>
+</ul>
+<h3 id="阻塞与非阻塞模式">阻塞与非阻塞模式</h3>
+<ul>
+<li>阻塞模式：为每个连接开辟一个线程，线程切换开销较大</li>
+<li>非阻塞模式：使用 I/O 多路复用，由单线程处理所有 Socket 的工作</li>
+</ul>
+<h3 id="粘包与拆包问题">粘包与拆包问题</h3>
+<p>流协议没有天然的数据包边界，可能出现数据包发送不完整、粘包或拆包的问题，因此需要在应用层区分包与包的边界。</p>
+<ul>
+<li>固定数据包长度
+<ul>
+<li>缓冲区按固定长度取包，剩余数据继续保留在缓冲区中</li>
+<li>不够灵活，并且可能浪费带宽</li>
+<li>需要在应用层自行组装数据包</li>
+</ul>
+</li>
+<li>使用特定字符作为包结束标志
+<ul>
+<li>例如 <code>\r\n</code></li>
+<li>需要处理转义字符</li>
+</ul>
+</li>
+<li>固定包头：主流方式
+<ul>
+<li>包头是固定长度的结构体，用于定义后续数据包的长度</li>
+</ul>
+</li>
+</ul>
+<p>此外，还需要考虑字节序和包体长度校验。跨平台时，可能存在大端字节序与小端字节序的差异。</p>
+<h2 id="联机架构">联机架构</h2>
+<h3 id="架构类型">架构类型</h3>
+<h4 id="无服务端架构">无服务端架构</h4>
+<ul>
+<li>单机：不与其他客户端通信</li>
+<li>P2P（Peer-to-Peer）对等网络架构：每个客户端地位平等，没有中心服务器充当仲裁者。每个客户端都与所有在线玩家建立并维持通信。
+<ul>
+<li>确定性逻辑：所有客户端的游戏逻辑必须完全一致，相同的输入产生相同的输出</li>
+<li>一致的随机数：使用相同的随机数种子和调用序列</li>
+<li>输入序列同步：按照相同顺序处理玩家输入</li>
+<li>主机模式：选择一个客户端作为主机，是一种伪 P2P 模式</li>
+</ul>
+</li>
+</ul>
+<h4 id="客户端与服务器架构cs">客户端与服务器架构（C/S）</h4>
+<p>所有客户端都与独立的服务端建立连接，由服务端对每个客户端进行校验。这是目前的主流常规架构。</p>
+<ul>
+<li>关键游戏数据采用长连接（TCP 或基于 UDP 的可靠连接）</li>
+<li>非实时数据使用 HTTP 请求</li>
+<li>推送通知用于召回离线玩家</li>
+</ul>
+<h5 id="空间划分">空间划分</h5>
+<ul>
+<li>滚服游戏
+<ul>
+<li>开服与合服</li>
+<li>每个服务器中的世界相同，但能够容纳的玩家数量有限</li>
+<li>相同的游戏数据运行在不同的服务端实例上</li>
+<li>各服务器之间不需要两两通信</li>
+</ul>
+</li>
+<li>副本游戏
+<ul>
+<li>对同一份游戏地图数据进行复制，生成新的实例，例如多个新手村</li>
+<li>开房间类型，例如《王者荣耀》</li>
+</ul>
+</li>
+<li>大图分割空间游戏
+<ul>
+<li>将一个世界实例划分为多个部分，每个部分放在一个或多个进程中独立运行</li>
+<li>当玩家移动到分割空间的边界时会产生边界问题。可以使用九宫格，以本地图为中心，向一定边界范围内发送同步信息，但实现比较麻烦</li>
+<li>空间分割也可以演变为：某些地图放在 A 服务器，另一些地图放在 B 服务器，从而减轻每台服务器的压力</li>
+<li>全球服技术
+<ul>
+<li>《剑网 3》：不同城镇在服务端分配到不同进程中</li>
+<li>《魔兽世界》：地图被划分为多个小块，每个小块都有地图实例负责管理</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="实现">实现</h3>
+<h4 id="服务端主循环">服务端主循环</h4>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">while</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    collectData</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D"> // 数据收集：监听网络层的新连接和数据输入</span></span>
+<span class="line"><span style="color:#B392F0">    updateState</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D"> // 状态更新：根据输入数据更新游戏世界</span></span>
+<span class="line"><span style="color:#B392F0">    syncData</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">    // 数据同步：将更新后的世界数据广播给客户端</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>如果要引入多线程，一般会将网络层单独放在一个线程中，负责数据收集和同步；游戏世界本身则运行在另一个线程中。</p>
+<h4 id="客户端主循环">客户端主循环</h4>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">while</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    input</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">       // 输入</span></span>
+<span class="line"><span style="color:#B392F0">    updateState</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D"> // 状态更新</span></span>
+<span class="line"><span style="color:#B392F0">    render</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">      // 渲染画面</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h4 id="多进程服务器">多进程服务器</h4>
+<ul>
+<li>每种功能的服务器都是一个独立进程。例如，将登录逻辑与副本战斗逻辑拆分到不同进程。这样即使登录玩家非常多，也不会阻塞副本战斗；只要定义好接口协议，协作成本也不会太高</li>
+<li>各进程之间通过 Socket 进行通信</li>
+</ul>
+<h4 id="多进程单线程与多进程多线程">多进程单线程与多进程多线程</h4>
+<ul>
+<li>线程是 CPU 调度的基本单位，可以更好地均衡 CPU 负载</li>
+<li>每个线程都有自己的调用堆栈，内存通信较为复杂
+<ul>
+<li>尽量减少共享数据：最好的线程安全是没有共享状态</li>
+<li>使用 RAII 管理锁：确保锁始终被正确释放</li>
+<li>避免嵌套锁：降低发生死锁的可能性</li>
+<li>优先使用消息队列：通过内存安全的设计，让消息只在进入和取出时被操作，即 Actor 模型</li>
+</ul>
+</li>
+</ul>
+<h2 id="actor-模型">Actor 模型</h2>
+<p>多线程通信主要有两种方式：共享内存与消息传递。消息传递对应 Actor 模式，也称参与者模式。</p>
+<h3 id="概念">概念</h3>
+<ul>
+<li><strong>状态（State）：</strong> Actor 组件自身的信息，相当于 OOP 对象中的属性。Actor 的状态会受到自身行为的影响，并且只能由自己修改</li>
+<li><strong>行为（Behavior）：</strong> Actor 的计算与处理操作，相当于 OOP 对象中的成员函数。Actor 之间不能直接调用其他 Actor 的计算逻辑，只有在收到消息后，Actor 才会触发自身的计算行为</li>
+<li><strong>消息（Mail）：</strong> Actor 之间以类似邮件的消息形式进行通信。每个 Actor 都有自己的邮箱（Mailbox），用于接收其他 Actor 发来的消息。通常，Actor 会按照消息到达的先后顺序，以 FIFO 的方式读取和处理消息</li>
+</ul>
+<h3 id="业务思考">业务思考</h3>
+<ul>
+<li>面向对象：释放一个技能 → 判断哪些玩家被命中 → 处理受击 → 扣除属性</li>
+<li>Actor 模型：通知目标收到了攻击 → 由目标 Actor 自行计算</li>
+</ul>
+<h3 id="优势">优势</h3>
+<ul>
+<li>抽象：封装状态和行为，同时通过消息机制避免数据竞争</li>
+<li>非阻塞：发送消息后无需等待响应，可以继续执行其他任务，即异步处理</li>
+<li>无锁：顺序处理消息</li>
+<li>架构灵活：本地与远程都可以通过消息进行通信</li>
+<li>易于测试：可以单独测试每个 Actor</li>
+</ul>
+<h3 id="劣势">劣势</h3>
+<ul>
+<li>独立性要求：要求每个 Actor 尽可能独立，不依赖共享状态，这会增加代码复杂度</li>
+<li>顺序不保证：不能保证全局消息的处理顺序。例如，无法保证 Actor A 处理完成后，再由 Actor B 处理，最后由 Actor C 处理</li>
+</ul>
+<h2 id="同步与序列化">同步与序列化</h2>
+<h3 id="数据包与应用层协议">数据包与应用层协议</h3>
+<p>不同类型的数据包包括：</p>
+<ul>
+<li>心跳包</li>
+<li>状态同步包</li>
+<li>RPC 数据包</li>
+<li>事件通知包</li>
+<li>世界状态快照包</li>
+</ul>
+<p>应用层协议需要面对不同的数据组织方式：</p>
+<ul>
+<li>POD 类型：可以直接进行内存复制</li>
+<li>面向对象类型：不能直接进行内存复制</li>
+</ul>
+<h3 id="序列化">序列化</h3>
+<p>序列化是将对象从内存中的随机访问格式，转换为可以存储或传输的线性比特流格式的过程。</p>
+<p>反序列化是将比特流重新构造成内存中对象的过程。</p>
+<ul>
+<li>只同步必要的数据</li>
+<li>使用紧凑的数据格式</li>
+<li>支持增量更新</li>
+<li>处理引用和关系</li>
+</ul>
+<h3 id="主流序列化方案">主流序列化方案</h3>
+<p>序列化通常使用动态缓冲区存放不定长数据。同时需要处理字节序问题，包括小端存储（低位编址）与大端存储（高位编址）。</p>
+<h4 id="json">JSON</h4>
+<ul>
+<li>可读性强、跨平台兼容，工具生态丰富
+<ul>
+<li>使用纯文本格式、UTF-8 编码和字符串序列，不存在字节序问题</li>
+<li><code>cJSON</code>/<code>nlohmann::json</code> 更符合现代 C++</li>
+</ul>
+</li>
+<li>问题
+<ul>
+<li>序列化与反序列化开销较大：文本解析比二进制解析更耗时</li>
+<li>数据体积较大：通常比二进制格式占用更多空间</li>
+<li>数值精度问题：浮点数在文本转换中可能损失精度</li>
+</ul>
+</li>
+<li>开发者效率与人为失误造成的问题远比性能问题多，因此应该方便开发者使用，并尽量避免人为失误</li>
+</ul>
+<h4 id="messagepack">MessagePack</h4>
+<ul>
+<li>可以视为二进制形式的 JSON：保留 JSON 动态组装的简单性，同时通过二进制格式获得更小的体积和更好的解析性能</li>
+<li>由类型标识与数据组成</li>
+</ul>
+<h4 id="protobuf">Protobuf</h4>
+<ul>
+<li>契约优先</li>
+<li>标签在消息的生命周期内不能改变，但可以随意添加新字段，也可以将旧字段标记为废弃</li>
+<li>支持跨语言、版本兼容与代码生成，能够自动生成高效且类型安全的序列化代码</li>
+</ul>
+<h2 id="世界状态同步">世界状态同步</h2>
+<p>世界状态同步包括 Replication 与 RPC，是服务器向客户端传递状态的过程。</p>
+<h3 id="创建更新与销毁">创建、更新与销毁</h3>
+<ul>
+<li>一般来说，需要同步的对象应当在服务器上创建，再复制给客户端</li>
+<li>全量更新：将权威端游戏世界中需要同步的游戏对象序列化。客户端收到数据后，与本地对象进行比对，随后覆盖更新或创建对象</li>
+<li>增量更新：同步数据包不包含全部状态，只包含发生变化的部分。创建对象是一条单独的数据；客户端收到创建指令后，先在本地创建对象，随后读取序列化数据包中新对象的初始状态并完成更新</li>
+<li>游戏对象使用动态 ID 标识，以唯一确定对象</li>
+<li>销毁阶段的思路相同，同样由权威端同步到客户端。也就是说，对象的实际销毁发生在权威端</li>
+</ul> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-08/联机游戏开发指南笔记（二）.html"> <span>← NEWER</span> <strong>联机游戏开发指南笔记（二）</strong> </a> <a class="article-pagination-next" href="../../posts/2026-06/UE智能指针小结.html"> <span>OLDER →</span> <strong>UE智能指针小结</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-08/联机游戏开发指南笔记（二）.html">联机游戏开发指南笔记（二）</a><a href="../../posts/2026-06/UE网络笔记三：属性同步机制.html">UE网络笔记三：属性同步机制</a><a href="../../posts/2026-05/UE网络笔记二：DS和客户端连接.html">UE网络笔记二：DS和客户端连接</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#联机基础"> 联机基础 </a><a class="article-toc-link depth-3" href="#tcpip-模型"> TCP/IP 模型 </a><a class="article-toc-link depth-3" href="#socket"> Socket </a><a class="article-toc-link depth-3" href="#阻塞与非阻塞模式"> 阻塞与非阻塞模式 </a><a class="article-toc-link depth-3" href="#粘包与拆包问题"> 粘包与拆包问题 </a><a class="article-toc-link depth-2" href="#联机架构"> 联机架构 </a><a class="article-toc-link depth-3" href="#架构类型"> 架构类型 </a><a class="article-toc-link depth-3" href="#实现"> 实现 </a><a class="article-toc-link depth-2" href="#actor-模型"> Actor 模型 </a><a class="article-toc-link depth-3" href="#概念"> 概念 </a><a class="article-toc-link depth-3" href="#业务思考"> 业务思考 </a><a class="article-toc-link depth-3" href="#优势"> 优势 </a><a class="article-toc-link depth-3" href="#劣势"> 劣势 </a><a class="article-toc-link depth-2" href="#同步与序列化"> 同步与序列化 </a><a class="article-toc-link depth-3" href="#数据包与应用层协议"> 数据包与应用层协议 </a><a class="article-toc-link depth-3" href="#序列化"> 序列化 </a><a class="article-toc-link depth-3" href="#主流序列化方案"> 主流序列化方案 </a><a class="article-toc-link depth-2" href="#世界状态同步"> 世界状态同步 </a><a class="article-toc-link depth-3" href="#创建更新与销毁"> 创建、更新与销毁 </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>
