@@ -1,0 +1,419 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="资产管理解析"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8A%EF%BC%9A%E8%B5%84%E4%BA%A7%EF%BC%8C%E5%8A%A0%E8%BD%BD%E5%8F%8A%E6%95%B0%E6%8D%AE%E8%A1%A8.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="UE资产管理笔记上：资产，加载及数据表 | Elysium"><meta property="og:description" content="资产管理解析"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-06/UE%E8%B5%84%E4%BA%A7%E7%AE%A1%E7%90%86%E7%AC%94%E8%AE%B0%E4%B8%8A%EF%BC%9A%E8%B5%84%E4%BA%A7%EF%BC%8C%E5%8A%A0%E8%BD%BD%E5%8F%8A%E6%95%B0%E6%8D%AE%E8%A1%A8.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-06-12"><meta property="article:tag" content="Note"><title>UE资产管理笔记上：资产，加载及数据表 | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=note">Note</a> <span>2026.06.12</span>  <span>13 MIN READ</span> </div> <h1 id="ue资产管理笔记上资产加载及数据表">UE资产管理笔记上：资产，加载及数据表</h1>
+<p>资产相关的系列内容，是日常经常打交道，但可能都没有系统对待或整理过。然而如果没有良好处置项目中的资产，一定会慢慢导致项目的腐坏，甚至会有严重的性能问题。之前处理过一些资产清理的业务，但缺乏深入探究，正好借助这个机会整理一下，这篇笔记内容可能写的比较发散冗长，但尽可能详细的解释遇到的概念。</p>
+<h2 id="什么是资产">什么是资产</h2>
+<p>UE里的资源引用粗略的分为两类，也就是硬引用和软引用。</p>
+<ul>
+<li>硬引用是在属性里直接保存UObject/UClass的引用，加载拥有者时，目标资源也会进入依赖链</li>
+<li>软引用则是在属性中保存资源路径，加载拥有者时，只拿到路径而不自动加载目标资源</li>
+</ul>
+<p>那么软引用这里保存的路径是什么呢？它并非只是单纯的路径字符串，而是应该被各种系统共同理解的对象地址。首先，在资产管理这个语境下，大部分可被加载、引用和保存到内容目录里的资产，都是UObject或其派生对象。例如材质、贴图、DA和DT等都是UObject或其派生对象，而资产管理讨论的资产，通常就是指的保存在磁盘package里的顶层UObject。</p>
+<p>package 更像是 UObject 系统里的“外层容器”和保存单元。<code>UPackage</code> 自己也是一个 <code>UObject</code> 派生类型。一个普通的资产对象最终会属于某个Package。我们看这段代码</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">UPackage</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> UObjectBaseUtility::</span><span style="color:#B392F0">GetPackage</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	const</span><span style="color:#E1E4E8"> UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Top </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> static_cast</span><span style="color:#F97583">&#x3C;const</span><span style="color:#E1E4E8"> UObject</span><span style="color:#F97583">*></span><span style="color:#E1E4E8">(this);</span></span>
+<span class="line"><span style="color:#F97583">	for</span><span style="color:#E1E4E8"> (;;)</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#6A737D">		// GetExternalPackage will return itself if called on a UPackage</span></span>
+<span class="line"><span style="color:#F97583">		if</span><span style="color:#E1E4E8"> (UPackage</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Package </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Top-></span><span style="color:#B392F0">GetExternalPackage</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">		{</span></span>
+<span class="line"><span style="color:#F97583">			return</span><span style="color:#E1E4E8"> Package;</span></span>
+<span class="line"><span style="color:#E1E4E8">		}</span></span>
+<span class="line"><span style="color:#E1E4E8">		Top </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Top-></span><span style="color:#B392F0">GetOuter</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>每个UObject都可以有一个Outer，表示“这个对象属于谁/放在哪个对象里面”。如果一个对象是资产里的子对象，它的Outer可能就是这个资产对象，如果本身就是顶层对象了，那么它的Outer通常就是UPackage。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/**</span></span>
+<span class="line"><span> * Returns true iff the Asset is a TopLevelAsset (not a subobject, its outer is a UPackage).</span></span>
+<span class="line"><span> * Only TopLevelAssets can be PrimaryAssets in the AssetManager.</span></span>
+<span class="line"><span> * A TopLevelAsset is not necessarily the main asset in a package; see IsUAsset.</span></span>
+<span class="line"><span> */</span></span>
+<span class="line"><span>COREUOBJECT_API bool IsTopLevelAsset() const;</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>bool FAssetData::IsTopLevelAsset(UObject* Object)</span></span>
+<span class="line"><span>{</span></span>
+<span class="line"><span>	if (!Object)</span></span>
+<span class="line"><span>	{</span></span>
+<span class="line"><span>		return false;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	UObject* Outer = Object->GetOuter();</span></span>
+<span class="line"><span>	if (!Outer)</span></span>
+<span class="line"><span>	{</span></span>
+<span class="line"><span>		return false;</span></span>
+<span class="line"><span>	}</span></span>
+<span class="line"><span>	return Outer->IsA&#x3C;UPackage>();</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>我们实际调试验证一下。假如在Content目录下有一个名叫T_Icon的贴图文件<code>Content/T_Icon.uasset</code>，当它被加载到内存中后，引擎会创建或填充一个UPackage对象（也是一个UObject），它里面会包含真正的类型为UTexture2D资产对象，也就是T_Icon，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">UTexture2D</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Texture </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ...;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">Texture</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetName</span><span style="color:#E1E4E8">(); </span></span>
+<span class="line"><span style="color:#E1E4E8">Texture</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetClass</span><span style="color:#E1E4E8">(); </span></span>
+<span class="line"><span style="color:#E1E4E8">Texture</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetOuter</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">Texture</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetPackage</span><span style="color:#E1E4E8">(); </span></span></code></pre>
+<p>调试打印一下内容：</p>
+<p><img  src="/_astro/image-20260613130529357.DbXT7Gnq_2dLs7i.webp" alt="image-20260613130529357" loading="lazy" decoding="async" width="603" height="240"></p>
+<p>长包名通常表示为<code>/Game/T_Icon</code>，这个<code>/Game</code>可以理解为项目Content目录对应的挂载点。所以package name描述的是这个资源包在UE虚拟资源路径系统里的位置。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="tex"><code><span class="line"><span style="color:#E1E4E8">Package: /Game/T_Icon</span></span>
+<span class="line"><span style="color:#E1E4E8">Asset:   T_Icon</span></span></code></pre>
+<p>那么package + asset name 合起来，就得到了常见的object path</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">/</span><span style="color:#E1E4E8">Game</span><span style="color:#F97583">/</span><span style="color:#E1E4E8">T_Icon.T_Icon</span></span></code></pre>
+<p>蓝图会比较特殊，假如我们有个资产是<code>/Content/Actor/BP_Hero.uassset</code>。加载到内存后，这个Package对象里会存在蓝图资产本体和编译后<code>UBlueprintGeneratedClass</code>对象。可以通过<code>TSoftObjectPtr&#x3C;UObject></code>和<code>TSoftClassPtr&#x3C;UObject></code>直观看到。<code>TSoftClassPtr&#x3C;UObject></code>指向的是这个蓝图编译类对象，也就是蓝图对应的<code>UClass</code>，会带上一个_C的小尾巴，这是蓝图生成类的命名约定。</p>
+<p><img  src="/_astro/image-20260613120125231.By8njfyz_2rq3eA.webp" alt="image-20260613120125231" loading="lazy" decoding="async" width="939" height="546"></p>
+<p>这个UClass对应的信息是这样的，正常运行时也会通过这个UClass生成出实际的游戏对象，也打印一下这个蓝图类的CDO对象信息，可以看到也在一个Package里，这说明这个Package并非只包含了一个Object对象，在我们这里例子里，它就包含了BP_Hero、BP_Hero_C、Default__BP_Hero_C。</p>
+<p><img  src="/_astro/image-20260613130551575.xjkqxG27_1Jq795.webp" alt="image-20260613130551575" loading="lazy" decoding="async" width="585" height="384"></p>
+<p>还有一种情况则是子对象路径，也就是说，某些对象并非是package里的顶层资产，而是资产内部的子对象。或者说，子对象的关键是这个UObject的Outer是另一个UObject。我们上文打印路径里看到的这个SubPathString，就是留给子对象用的。</p>
+<p>最常见的子对象是下面两个例子</p>
+<ul>
+<li>默认子对象：类默认对象 CDO 上的子对象模板。C++ 类通常在构造函数里通过 <code>CreateDefaultSubobject</code> 声明这些默认子对象，例如 <code>ACharacter</code> 的 <code>CapsuleComponent</code>、<code>CharacterMovement</code>、<code>Mesh</code>；Blueprint 在 Components 面板里添加的组件，也会进入蓝图生成类的默认结构。实例化 Actor 时，运行时 Actor 会根据这些默认模板创建或初始化自己的组件实例。</li>
+<li>运行时动态子对象：游戏运行中通过 <code>NewObject&#x3C;>()</code> 创建，并把 Outer 指向某个 UObject 的对象。例如 <code>NewObject&#x3C;UMyComponent>(Actor)</code> 创建出来的组件，如果 Outer 是这个 Actor，它就是这个 Actor 的子对象。但它不是默认子对象，因为它不是 CDO 上的类模板。</li>
+</ul>
+<p>还是以上文BP_Hero这个例子，我们可以打印一下它的CDO对象里的Movement子对象</p>
+<p><img  src="/_astro/image-20260613131233061.DR0D2QTw_rUYTp.webp" alt="image-20260613131233061" loading="lazy" decoding="async" width="699" height="312"></p>
+<p>一般以：连接</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>/Game/Characters/BP_Hero:Default__BP_Hero_C.CharMoveComp</span></span></code></pre>
+<h2 id="路径引用以及assetregistry">路径、引用以及AssetRegistry</h2>
+<p>我们知道UE对指向某个对象，一般分为硬引用或者软引用，例如<code>TObjectPtr&#x3C;T></code>,<code>TSoftObjectPtr&#x3C;T></code>这样的形式。对于软引用而言，一般会表达为路径。</p>
+<h3 id="fsoftobjectpath">FSoftObjectPath</h3>
+<p>FSoftObjectPath包含FTopLevelAssetPath AssetPath和FUtf8String SubPathString，是描述路径的底层结构。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FSoftObjectPath</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">private:</span></span>
+<span class="line"><span style="color:#6A737D">	/** Asset path, path to a top level object in a package. This is /package/path.assetname */</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">	FTopLevelAssetPath AssetPath;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">	/** Optional FString for subobject within an asset. This is the sub path after the : */</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">	FUtf8String SubPathString;</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<ul>
+<li>
+<p><code>FTopLevelAssetPath AssetPath</code>：顶层资产路径</p>
+</li>
+<li>
+<p><code>FUtf8String SubPathString</code>：可选子对象路径，也就是 <code>:</code> 后面的部分。</p>
+</li>
+</ul>
+<p>可以调用<code>FSoftObjectPath::TryLoad</code>触发加载。</p>
+<h3 id="tsoftobjectptr">TSoftObjectPtr</h3>
+<p><code>FSoftObjectPtr</code> 是带缓存能力的软指针，<code>TSoftObjectPtr&#x3C;T></code> 是它的模板包装，方便写在 <code>UPROPERTY</code> 里并约束类型。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#6A737D">// Engine/Source/Runtime/CoreUObject/Public/UObject/SoftObjectPtr.h</span></span>
+<span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * FSoftObjectPtr is a type of weak pointer to a UObject, that also keeps track of the path to the object on disk.</span></span>
+<span class="line"><span style="color:#6A737D"> * It will change back and forth between being Valid and Pending as the referenced object loads or unloads.</span></span>
+<span class="line"><span style="color:#6A737D"> * It has no impact on if the object is garbage collected or not.</span></span>
+<span class="line"><span style="color:#6A737D"> *</span></span>
+<span class="line"><span style="color:#6A737D"> * This is useful to specify assets that you may want to asynchronously load on demand.</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#E1E4E8"> FSoftObjectPtr : public TPersistentObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FSoftObjectPath</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    UObject</span><span style="color:#F97583">*</span><span style="color:#B392F0"> LoadSynchronous</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Asset </span><span style="color:#F97583">=</span><span style="color:#B392F0"> Get</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (Asset </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> nullptr </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#F97583"> !</span><span style="color:#B392F0">IsNull</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#B392F0">            ToSoftObjectPath</span><span style="color:#E1E4E8">().</span><span style="color:#B392F0">TryLoad</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">            Asset </span><span style="color:#F97583">=</span><span style="color:#B392F0"> Get</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#E1E4E8"> Asset;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">template</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">class TObjectID</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#E1E4E8"> TPersistentObjectPtr</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">private:</span></span>
+<span class="line"><span style="color:#6A737D">	/** Once the object has been noticed to be loaded, this is set to the object weak pointer **/</span></span>
+<span class="line"><span style="color:#E1E4E8">	mutable FWeakObjectPtr	WeakPtr;</span></span>
+<span class="line"><span style="color:#6A737D">	/** Guid for the object this pointer points to or will point to. **/</span></span>
+<span class="line"><span style="color:#E1E4E8">	TObjectID				ObjectID;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * TSoftObjectPtr is templatized wrapper of the generic FSoftObjectPtr,</span></span>
+<span class="line"><span style="color:#6A737D"> * it can be used in UProperties</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#E1E4E8">template</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">class T</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">UObject</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#E1E4E8"> TSoftObjectPtr</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FSoftObjectPtr SoftObjectPtr;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>举个例子，一个<code>TSoftObjectPtr&#x3C;UTexture2D>  Icon</code> 并不是一个已经加载的贴图指针，而是一个能解析到某个贴图的路径，加上一份弱缓存。</p>
+<p>如果对象没加载时，它无法解析到，只有一个路径，是pending状态。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">/**  </span></span>
+<span class="line"><span style="color:#6A737D"> * Test if this does not point to a live UObject, but may in the future</span></span>
+<span class="line"><span style="color:#6A737D"> * </span></span>
+<span class="line"><span style="color:#6A737D"> * </span><span style="color:#F97583">@return</span><span style="color:#6A737D"> true if this does not point to a real object, but could possibly</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#E1E4E8">UE_FORCEINLINE_HINT </span><span style="color:#F97583">bool</span><span style="color:#B392F0"> IsPending</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#B392F0"> Get</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> nullptr</span><span style="color:#F97583"> &#x26;&#x26;</span><span style="color:#E1E4E8"> ObjectID.</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">/**  </span></span>
+<span class="line"><span style="color:#6A737D"> * Test if this points to a live UObject</span></span>
+<span class="line"><span style="color:#6A737D"> *</span></span>
+<span class="line"><span style="color:#6A737D"> * </span><span style="color:#F97583">@return</span><span style="color:#6A737D"> true if Get() would return a valid non-null pointer</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#E1E4E8">UE_FORCEINLINE_HINT </span><span style="color:#F97583">bool</span><span style="color:#B392F0"> IsValid</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#F97583"> !!</span><span style="color:#B392F0">Get</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>如果对象加载了，可以直接通过<code>Get()</code>获取到引用，但是软引用并不保活，这个对象依然有可能被GC掉。</p>
+<h3 id="tsoftclassptr">TSoftClassPtr</h3>
+<p>也是软引用，但是最终它期望解析成被约束为T的子类的<code>UClass</code>，和<code>TSoftObjectPtr</code>干的事上面差不多。</p>
+<h3 id="assetregistry">AssetRegistry</h3>
+<p>AssetRegistry是UE负责维护资产元数据和磁盘包里记录的依赖关系的角色，具体来说，它负责解释某个路径下有那些资产，某个包依赖哪些包，哪些包引用了这个包。</p>
+<p>最重要的两个接口依赖查询接口如下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * Gets a list of AssetIdentifiers or FAssetDependencies that are referenced by the supplied AssetIdentifier.</span></span>
+<span class="line"><span style="color:#6A737D"> * Only returns dependencies reported in the on-disk package.</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#F97583">virtual</span><span style="color:#F97583"> bool</span><span style="color:#B392F0"> GetDependencies</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FName</span><span style="color:#FFAB70"> PackageName</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">TArray</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">FName</span><span style="color:#E1E4E8">></span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> OutDependencies</span><span style="color:#E1E4E8">, ... ) </span><span style="color:#F97583">const</span><span style="color:#F97583"> =</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * Gets a list of AssetIdentifiers or FAssetDependencies that reference the supplied AssetIdentifier.</span></span>
+<span class="line"><span style="color:#6A737D"> * Only returns referencers reported in the on-disk package.</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#F97583">virtual</span><span style="color:#F97583"> bool</span><span style="color:#B392F0"> GetReferencers</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FName</span><span style="color:#FFAB70"> PackageName</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">TArray</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">FName</span><span style="color:#E1E4E8">></span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> OutReferencers</span><span style="color:#E1E4E8">, ... ) </span><span style="color:#F97583">const</span><span style="color:#F97583"> =</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span></code></pre>
+<p>这里要注意，它查询的是on-disk package里记录的依赖，而不是运行时，它管理的是索引和引用图，并非UObject。编辑器下经常用的<code>Reference Viewer</code>，基本上就是 AssetRegistry 依赖/引用图能力的编辑器可视化入口。</p>
+<p>这里提到一个概念叫资产元数据，也就是<code>AssetData</code>，它是一个轻量资产描述，保存了资产的包名、路径、资产名等等信息，并不是一个已加载的UObject。通过<code>FAssetData::GetSoftObjectPath()</code>生成<code>FSoftObjectPath </code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FAssetData</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">	/** The name of the package in which the asset is found, this is the full long package name such as /Game/Path/Package */</span></span>
+<span class="line"><span style="color:#E1E4E8">	FName PackageName;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">	/** The path to the package in which the asset is found, this is /Game/Path with the Package stripped off */</span></span>
+<span class="line"><span style="color:#E1E4E8">	FName PackagePath;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">	/** The name of the asset without the package */</span></span>
+<span class="line"><span style="color:#E1E4E8">    FName AssetName;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">	/** The path of the asset's class, e.g. /Script/Engine.StaticMesh */</span></span>
+<span class="line"><span style="color:#E1E4E8">	FTopLevelAssetPath AssetClassPath;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">    //...</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<h2 id="加载以及streamablemanager">加载以及StreamableManager</h2>
+<h3 id="loadobject"><code>LoadObject</code></h3>
+<p>加载系统负责把路径变成对象。最直接的同步加载，例如模板函数 <code>LoadObject&#x3C;T></code> ，其实是<code>StaticLoadObject</code>的包装</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">COREUOBJECT_API UObject</span><span style="color:#F97583">*</span><span style="color:#B392F0"> StaticLoadObject</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">    UClass</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Class,</span></span>
+<span class="line"><span style="color:#E1E4E8">    UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> InOuter,</span></span>
+<span class="line"><span style="color:#E1E4E8">    FStringView Name,</span></span>
+<span class="line"><span style="color:#E1E4E8">    FStringView Filename </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> {},</span></span>
+<span class="line"><span style="color:#E1E4E8">    uint32 LoadFlags </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> LOAD_None,</span></span>
+<span class="line"><span style="color:#E1E4E8">    UPackageMap</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Sandbox </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    bool</span><span style="color:#E1E4E8"> bAllowObjectReconciliation </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#E1E4E8"> FLinkerInstancingContext</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> InstancingContext </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">template</span><span style="color:#E1E4E8">&#x3C; </span><span style="color:#F97583">class</span><span style="color:#B392F0"> T</span><span style="color:#E1E4E8"> ></span></span>
+<span class="line"><span style="color:#F97583">inline</span><span style="color:#B392F0"> T</span><span style="color:#F97583">*</span><span style="color:#B392F0"> LoadObject</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UObject</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Outer</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">FStringView</span><span style="color:#FFAB70"> Name</span><span style="color:#E1E4E8">, ...)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#E1E4E8"> (T</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">)</span><span style="color:#B392F0">StaticLoadObject</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">T</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">StaticClass</span><span style="color:#E1E4E8">(), Outer, Name, ...);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>使用上很简单：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>UTexture2D* Icon = LoadObject&#x3C;UTexture2D>(</span></span>
+<span class="line"><span>    nullptr,</span></span>
+<span class="line"><span>    TEXT("/Game/UI/T_Icon_Sword.T_Icon_Sword"));</span></span></code></pre>
+<p><code>TSoftObjectPtr::LoadSynchronous()</code> 也是同步加载，它最终会走到 <code>FSoftObjectPath::TryLoad()</code>，同步加载会阻塞发起调用的线程，直到加载流程完成。如果这个调用发生在 GameThread，并且加载耗时较长，就会表现为游戏/编辑器卡顿。</p>
+<h3 id="fstreamablemanager"><code>FStreamableManager</code></h3>
+<p>FStreamableManager 管理的是 streaming assets 的加载请求、回调、句柄和保活。经常用作软引用加载，因为它的公开接口主要就是接收<code>FSoftObjectPath</code> / <code>TSoftObjectPtr</code> / <code>TSoftClassPtr</code> 这类路径目标。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * A native class for managing streaming assets in and keeping them in memory.</span></span>
+<span class="line"><span style="color:#6A737D"> * AssetManager is the global singleton version of this with blueprint access</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FStreamableManager</span><span style="color:#E1E4E8"> : </span><span style="color:#F97583">public</span><span style="color:#B392F0"> FGCObject</span></span></code></pre>
+<p>常用的异步加载可能这样写，底层调用的是LoadPackageAsync这样的异步加载接口。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">FStreamableManager</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> Streamable </span><span style="color:#F97583">=</span><span style="color:#B392F0"> UAssetManager</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">GetStreamableManager</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">TSharedPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FStreamableHandle</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Handle </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Streamable.</span><span style="color:#B392F0">RequestAsyncLoad</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">    IconPath,</span></span>
+<span class="line"><span style="color:#B392F0">    FStreamableDelegate</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">CreateLambda</span><span style="color:#E1E4E8">([</span><span style="color:#FFAB70">IconPath</span><span style="color:#E1E4E8">]()</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> LoadedObject </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> IconPath.</span><span style="color:#B392F0">ResolveObject</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        UTexture2D</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Texture </span><span style="color:#F97583">=</span><span style="color:#B392F0"> Cast</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">UTexture2D</span><span style="color:#E1E4E8">>(LoadedObject);</span></span>
+<span class="line"><span style="color:#6A737D">        //...</span></span>
+<span class="line"><span style="color:#E1E4E8">    }));</span></span></code></pre>
+<p><code>FStreamableHandle</code> 不只是回调句柄。只要 Handle 处于 Active 状态，加载出来的资产就会留在内存里。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#6A737D">/** A handle to a synchronous or async load. As long as the handle is Active, loaded assets will stay in memory */</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#E1E4E8"> FStreamableHandle : public TSharedFromThis</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FStreamableHandle</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    void</span><span style="color:#B392F0"> ReleaseHandle</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#F97583">    void</span><span style="color:#B392F0"> CancelHandle</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>FStreamableManager也提供了同步加载接口，相比于直接同步加载，StreamableManager提供了一些加载管理。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * Synchronously load a set of assets, and return a handle. </span></span>
+<span class="line"><span style="color:#6A737D"> * This can be very slow and may stall the game thread for several seconds.</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#E1E4E8">TSharedPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FStreamableHandle</span><span style="color:#F97583">></span><span style="color:#B392F0"> RequestSyncLoad</span><span style="color:#E1E4E8">(...);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * Synchronously load the referred asset and return the loaded object.</span></span>
+<span class="line"><span style="color:#6A737D"> * This can be very slow and may stall the game thread for several seconds.</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span>
+<span class="line"><span style="color:#E1E4E8">UObject</span><span style="color:#F97583">*</span><span style="color:#B392F0"> LoadSynchronous</span><span style="color:#E1E4E8">(...);</span></span></code></pre>
+<p><code>FStreamableManager</code> 的同步加载通常是“发起加载请求，然后阻塞等待结果”。如果这个阻塞发生在 GameThread，并且目标资产大、依赖链长，或者触发了较重的 IO、反序列化、资源初始化，就可能造成明显卡顿。</p>
+<p>可以看出，在游戏业务这一层，只要面对的是资产路径，一些需要考虑生命周期管理的场景下，都优先考虑使用FStreamableManager，只有在一些诸如编译器工具，小资源，或者不被玩家感知的路径上触发的加载，可以考虑直接使用LoadObject这类直接使用的同步接口。</p>
+<h2 id="数据表">数据表</h2>
+<h3 id="datatable"><code>DataTable</code></h3>
+<h4 id="成员设计">成员设计</h4>
+<p>一个典型的DT行数据定义可能是这样的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FItemRow</span><span style="color:#E1E4E8"> : </span><span style="color:#F97583">public</span><span style="color:#B392F0"> FTableRowBase</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    GENERATED_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">    int32 Id;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">    FText Name;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p><code>DataTable</code>可以看两个关键成员</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">UCLASS</span><span style="color:#E1E4E8">(...)</span></span>
+<span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> UDataTable</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">VisibleAnywhere</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">Category</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">DataTable, </span><span style="color:#B392F0">meta</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">(DisplayThumbnail</span><span style="color:#F97583">=</span><span style="color:#9ECBFF">"false"</span><span style="color:#E1E4E8">))	</span></span>
+<span class="line"><span style="color:#E1E4E8">    TObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UScriptStruct</span><span style="color:#F97583">></span><span style="color:#E1E4E8">   RowStruct;</span></span>
+<span class="line"><span style="color:#F97583">protected:</span></span>
+<span class="line"><span style="color:#6A737D">	/** Map of name of row to row data structure. */</span></span>
+<span class="line"><span style="color:#E1E4E8">	TMap</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FName, uint8</span><span style="color:#F97583">*></span><span style="color:#E1E4E8">		RowMap;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<ul>
+<li><code>RowStruct</code>对应的就是<code>FItemRow</code>此用户自定义结构体的反射数据。描述了这行数据字段有哪些、类型是什么等等。</li>
+<li><code>RowMap</code> 是行名到行数据内存的映射。</li>
+</ul>
+<p>平时调用可能是这样的</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">const</span><span style="color:#E1E4E8"> FItemRow</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Row </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> DataTable->FindRow</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FItemRow</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(RowName, </span><span style="color:#B392F0">TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"Find"</span><span style="color:#E1E4E8">));</span></span></code></pre>
+<p>这里本质用 <code>FName</code> 在 <code>RowMap</code> 里找到那行数据，再按 <code>FItemRow</code> 解释。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">template</span><span style="color:#E1E4E8"> &#x3C;</span><span style="color:#F97583">class</span><span style="color:#B392F0"> T</span><span style="color:#E1E4E8">></span></span>
+<span class="line"><span style="color:#B392F0">T</span><span style="color:#F97583">*</span><span style="color:#B392F0"> FindRow</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FName</span><span style="color:#FFAB70"> RowName</span><span style="color:#E1E4E8">,</span><span style="color:#F97583">const</span><span style="color:#B392F0"> TCHAR</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> ContextString</span><span style="color:#E1E4E8">,</span><span style="color:#F97583">bool</span><span style="color:#FFAB70"> bWarnIfRowMissing</span><span style="color:#F97583"> =</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">) </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">    //...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    uint8</span><span style="color:#F97583">*</span><span style="color:#F97583"> const*</span><span style="color:#E1E4E8"> RowDataPtr </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetRowMap</span><span style="color:#E1E4E8">().</span><span style="color:#B392F0">Find</span><span style="color:#E1E4E8">(RowName);</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (RowDataPtr </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">         return</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> RowData </span><span style="color:#F97583">=</span><span style="color:#F97583"> *</span><span style="color:#E1E4E8">RowDataPtr;</span></span>
+<span class="line"><span style="color:#B392F0">    check</span><span style="color:#E1E4E8">(RowData);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#F97583"> reinterpret_cast&#x3C;</span><span style="color:#E1E4E8">T</span><span style="color:#F97583">*></span><span style="color:#E1E4E8">(RowData);</span><span style="color:#6A737D"> // 转型</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p><code>uint8*</code> 在这里也就是表示”指向一块原始字节内存“。对应的是某一行自定义数据的内存地址</p>
+<p>当此表格被加载时，会反序列化成<code>UDataTable</code>对象，这里<code>RowStruct</code>标注了<code>UPROPERTY</code>参与默认 UObject 序列化，但<code>RowMap</code> 因为是 <code>TMap&#x3C;FName, uint8*></code> 原始内存，不能靠默认反射系统自动处理，因此<code>UDataTable</code>会依赖<code>RowStruct</code>描述的结构体信息，把每一行数据恢复成对应结构体布局的内存，然后把行名和行数据地址都放进<code>RowMap</code>中，具体可以见<code>UDataTable::Serialize</code></p>
+<h4 id="fdatatablerowhandle"><code>FDataTableRowHandle</code></h4>
+<p>有时候我们可能会直接这样使用，RowType这个meta会影响怎么选<code>DataTable</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FItemSetting</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    GENERATED_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditAnywhere, BlueprintReadOnly,meta </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (RowType </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> "/script/Demo.ItemRow"</span><span style="color:#E1E4E8">))</span></span>
+<span class="line"><span style="color:#E1E4E8">    FDataTableRowHandle Config;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>这个<code>FDataTableRowHandle</code> 指的就是某张表里的某一行。我们可以看它的类型结构</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FDataTableRowHandle</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">EditAnywhere</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">BlueprintReadWrite</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    TObjectPtr</span><span style="color:#F97583">&#x3C;const</span><span style="color:#E1E4E8"> UDataTable</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> DataTable;</span><span style="color:#6A737D"> // 哪张表</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">EditAnywhere</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">BlueprintReadWrite</span><span style="color:#E1E4E8">) </span></span>
+<span class="line"><span style="color:#E1E4E8">    FName RowName;</span><span style="color:#6A737D"> // 哪一行</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>有个小细节我们看到这里用的<code>TObjectPtr</code>是一个对象引用。如果某个资产确实硬引用了一个<code>RowHandle</code>，而<code>RowHandle</code>又直接引用了<code>DataTable</code>，那这张表就会被跟着加载。</p>
+<h4 id="rowname"><code>RowName</code></h4>
+<p>有时候会遇到一个问题，例如我们设计一张道具表的时候，到底是用<code>int32 Id</code>作为key还是用<code>DataTable</code>自带的<code>RowName</code></p>
+<p>可以看到如果对于<code>RowMap</code>来说，如果这张表服务给UE内部配置和资产选择，应该优先用<code>RowName</code>，因为不管是<code>RowHandle</code>、编辑器的行选择，或者是<code>FindRow</code>这样，都是围绕着<code>RowName</code>来工作的。</p>
+<p>而如果外部系统强依赖数字ID，那就应该保留一个int Id的字段。但这里要确保做唯一性校验，规定它和<code>RowName</code>的关系。</p>
+<h4 id="fnamefstringftext"><code>FName、FString、FText</code></h4>
+<p>再插入一个知识，<code>FName</code>`FString<code>\</code>FText<code>都是表达字符串这个功能，为什么有这三个，为什么</code>DataTable<code>要用</code>FName`作为行名呢。</p>
+<p><code>FName</code>这个类前其实就有一段注释解释了</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">/**</span></span>
+<span class="line"><span style="color:#6A737D"> * Public name, available to the world.  Names are stored as a combination of</span></span>
+<span class="line"><span style="color:#6A737D"> * an index into a table of unique strings and an instance number.</span></span>
+<span class="line"><span style="color:#6A737D"> * Names are case-insensitive, but case-preserving (when WITH_CASE_PRESERVING_NAME is 1)</span></span>
+<span class="line"><span style="color:#6A737D"> */</span></span></code></pre>
+<p>也就是说<code>FName</code>并非是字符串本身，而是全局名字表里的名字ID + 可选数字后缀。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> FName</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">	FNameEntryId ComparisonIndex;</span></span>
+<span class="line"><span style="color:#E1E4E8">	uint32 Number;</span></span>
+<span class="line"><span style="color:#F97583">	#if</span><span style="color:#B392F0"> WITH_CASE_PRESERVING_NAME</span></span>
+<span class="line"><span style="color:#E1E4E8">	FNameEntryId DisplayIndex;</span></span>
+<span class="line"><span style="color:#F97583">	#endif</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>例如我们有一组名字可能是，注意这里一定要用下划线 + 数字</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">Actor</span></span>
+<span class="line"><span style="color:#E1E4E8">Actor_0</span></span>
+<span class="line"><span style="color:#E1E4E8">Actor_1</span></span></code></pre>
+<p>在<code>FName</code>里会被拆解成基础名字 + 数字后缀的形式，也就是说，<code>ComparisonIndex</code>指向的全局名字表中的”Actor”，<code>Number</code>则是存储这个数字后缀（但是这里有个Number == 0 表示的是没有后缀，所以Actor_0的Number应该是1,得往后加一位）</p>
+<p>因此，相比较<code>FString</code>，<code>FName</code>可以通过<code>ComparisonIndex</code> 和<code>Number</code> 加速查询过程。大量的<code>FName</code> 都会进入到全局名字库，所以要小心运行时动态生成大量不重复的名字。这里要注意，数字后缀的拆分主要针对 <code>Actor_0</code>、<code>Actor_1</code> 这类“基础名 + 下划线 + 数字”的形式，如果许多表的<code>RowName</code>都是1，2，3这样纯数字，它们依然会是不同的名字条目。相比较这些可控的名字来说，尽管这些名字是常驻内存中的，一般也不太可能成为内存问题，更良好的名字用于配置和展示才应该是考虑范围。这样其实也可以理解为什么DataTable使用FName作为行名，从语义上它确实指代这一行，另一方面这也确实可以加速查询。</p>
+<p>至于<code>FString</code>和一般认知意义上的字符类型是差不多的，而<code>FText</code>则更重一些，它是面向玩家显示的文本，支持本地化，不再赘述了。</p>
+<p>现在思考一个问题，如果某张DT表的有几万个字段，每行数据里可能引用了很多内容，而一旦要加载进内存中，就是整张表都要Load进来。一般这里都会认为不要写硬引用，而使用软引用，这样不要再加载时把一系列的资源都一口加载进来。我们之后再讨论关于加载、同步加载和异步加载的问题。</p>
+<h3 id="dataasset">DataAsset</h3>
+<p>对于DA表格，可能是这样写的，项目里可以创建多份<code>UItemDataAsset</code>的资产，每一份都是独立配置。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#B392F0">UCLASS</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#E1E4E8">class UItemDataAsset : public UDataAsset</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    GENERATED_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">public:</span></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditAnywhere, BlueprintReadOnly)</span></span>
+<span class="line"><span style="color:#E1E4E8">    FName ItemId;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditAnywhere, BlueprintReadOnly)</span></span>
+<span class="line"><span style="color:#E1E4E8">    FText DisplayName;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    UPROPERTY</span><span style="color:#E1E4E8">(EditAnywhere, BlueprintReadOnly)</span></span>
+<span class="line"><span style="color:#E1E4E8">    TSoftObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UTexture2D</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Icon;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>UDataAsset本身也非常简单，只是一个很轻量的可资产化的UObject基类。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#B392F0">UCLASS</span><span style="color:#E1E4E8">(abstract, MinimalAPI, Meta </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (LoadBehavior </span><span style="color:#F97583">=</span><span style="color:#9ECBFF"> "LazyOnDemand"</span><span style="color:#E1E4E8">))</span></span>
+<span class="line"><span style="color:#E1E4E8">class UDataAsset : public UObject</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">	GENERATED_UCLASS_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">public:</span></span>
+<span class="line"><span style="color:#6A737D">	// UObject interface</span></span>
+<span class="line"><span style="color:#F97583">#if</span><span style="color:#B392F0"> WITH_EDITORONLY_DATA</span></span>
+<span class="line"><span style="color:#E1E4E8">	ENGINE_API virtual </span><span style="color:#F97583">void</span><span style="color:#B392F0"> Serialize</span><span style="color:#E1E4E8">(FStructuredArchiveRecord Record) override;</span></span>
+<span class="line"><span style="color:#F97583">#endif</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">private:</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">(AssetRegistrySearchable)</span></span>
+<span class="line"><span style="color:#E1E4E8">	TSubclassOf</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UDataAsset</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> NativeClass;</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p><code>NativeClass</code> 保存这个 DataAsset 对应的原生 C++ 类型信息,也就是“某个继承自 UDataAsset 的类”。</p>
+<h3 id="uprimarydataasset">UPrimaryDataAsset</h3>
+<p>UPrimaryDataAsset 继承自UDataAsset，是一个非常重要的派生类。这里引擎也留下了一大段注释来解释</p>
+<ul>
+<li>实现了<code>GetPrimaryAssetId</code>，支持<code>Asset Bundle</code>，可以被<code>AssetManager</code>手动加卸载</li>
+<li>Native继承和蓝图继承的一些规则，包括重点解释了<code>PrimaryAssetType</code>的推导规则，这里Native可以认为说的就是C++继承链的意思。</li>
+</ul>
+<p>简单来说，<code>PrimaryAssetType</code> 是理解为资产分类，代表的是一类资产。<code>PrimaryAssetId</code> 是则是某个 Primary Asset 的唯一身份标识。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FPrimaryAssetType</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">private:</span></span>
+<span class="line"><span style="color:#E1E4E8">    FName Name;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">USTRUCT</span><span style="color:#E1E4E8">(BlueprintType)</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> FPrimaryAssetId</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FPrimaryAssetType PrimaryAssetType;</span></span>
+<span class="line"><span style="color:#E1E4E8">    FName PrimaryAssetName;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span></code></pre>
+<p>假如我们有一个UItemDefinition继承自UPrimaryDataAsset ，并创建了一个DA资产叫DA_Item_Sword，那么这里FPrimaryAssetType就是这个<code>ItemDefinition</code>，<code>PrimaryAssetName</code>就是<code>DA_Item_Sword</code>，而<code>FPrimaryAssetId</code>则是<code>ItemDefinition:DA_Item_Sword</code>这样的形式，标识了这个唯一的资产。</p>
+<p>对于<code>PrimaryAssetType</code>的推导规则，可以这样理解：</p>
+<ul>
+<li>如果是原生的C++继承链（Native Class），通常取离资产最近的那个原生类名，并去掉U前缀</li>
+<li>如果中间有蓝图继承链，<code>UPrimaryDataAsset</code> 的默认实现会继续向父类追溯，常见情况下仍然会回到最近的原生基类作为类型。例如 <code>UMyShape -> BP_MyRectangle -> BP_MySquare</code> 这样的继承链，<code>BP_MySquare</code> 的默认 <code>PrimaryAssetId</code> 会是 <code>MyShape:BP_MySquare</code></li>
+</ul>
+<p>很好看出，区别于普通的DataAsset只是一个UObject资产，<code>UPrimaryDataAsset</code> 更多是为了配合<code>AssetManager</code>管理<code>PrimaryAsset</code>进行设计的。</p> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-06/UE资产管理笔记下：AssetManager.html"> <span>← NEWER</span> <strong>UE资产管理笔记下：AssetManager</strong> </a> <a class="article-pagination-next" href="../../posts/2026-06/UE网络笔记三：属性同步机制.html"> <span>OLDER →</span> <strong>UE网络笔记三：属性同步机制</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-06/UE智能指针小结.html">UE智能指针小结</a><a href="../../posts/2026-06/UE5新技术框架速查.html">UE5新技术框架速查</a><a href="../../posts/2026-06/UE资产管理笔记下：AssetManager.html">UE资产管理笔记下：AssetManager</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#什么是资产"> 什么是资产 </a><a class="article-toc-link depth-2" href="#路径引用以及assetregistry"> 路径、引用以及AssetRegistry </a><a class="article-toc-link depth-3" href="#fsoftobjectpath"> FSoftObjectPath </a><a class="article-toc-link depth-3" href="#tsoftobjectptr"> TSoftObjectPtr </a><a class="article-toc-link depth-3" href="#tsoftclassptr"> TSoftClassPtr </a><a class="article-toc-link depth-3" href="#assetregistry"> AssetRegistry </a><a class="article-toc-link depth-2" href="#加载以及streamablemanager"> 加载以及StreamableManager </a><a class="article-toc-link depth-3" href="#loadobject"> LoadObject </a><a class="article-toc-link depth-3" href="#fstreamablemanager"> FStreamableManager </a><a class="article-toc-link depth-2" href="#数据表"> 数据表 </a><a class="article-toc-link depth-3" href="#datatable"> DataTable </a><a class="article-toc-link depth-3" href="#dataasset"> DataAsset </a><a class="article-toc-link depth-3" href="#uprimarydataasset"> UPrimaryDataAsset </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

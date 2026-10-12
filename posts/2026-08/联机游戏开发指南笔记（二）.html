@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="网络开发基础知识框架"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-08/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%BA%8C%EF%BC%89.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="联机游戏开发指南笔记（二） | Elysium"><meta property="og:description" content="网络开发基础知识框架"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-08/%E8%81%94%E6%9C%BA%E6%B8%B8%E6%88%8F%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97%E7%AC%94%E8%AE%B0%EF%BC%88%E4%BA%8C%EF%BC%89.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-08-02"><meta property="article:tag" content="Net"><title>联机游戏开发指南笔记（二） | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=net">Net</a> <span>2026.08.02</span>  <span>3 MIN READ</span> </div> <h1 id="联机游戏开发指南笔记二">联机游戏开发指南笔记（二）</h1>
+<p>主要内容来自《联机游戏开发完全指南》，整理简单的笔记自查对照</p>
+<h1 id="延迟">延迟</h1>
+<ol>
+<li>非网络延迟因素
+<ol>
+<li>输入采样延迟</li>
+<li>（多线程）渲染流水线延迟 - 渲染缓冲区，GPU延迟执行</li>
+<li>垂直同步/显示延迟</li>
+</ol>
+</li>
+<li>网络延迟因素
+<ol>
+<li>处理延迟：检查地址确定路由</li>
+<li>传输延迟：灌进物理介质</li>
+<li>排队延迟：路由器处理的时间是有限的</li>
+<li>传播延迟：物理介质传输</li>
+</ol>
+</li>
+</ol>
+<h2 id="rtt往返时间">RTT（往返时间）</h2>
+<p>Round Trip Time：常用一半估算单程时间，但是一般来说并不是正好两倍，一般围绕平均特征值上下波动，这就是拉扯</p>
+<ul>
+<li>抖动成因
+<ul>
+<li>处理延迟：占比较小，路由器动态调整数据包路线</li>
+<li>传输延迟/传播延迟：路由器动态负载均衡</li>
+<li>排队延迟：处理多个数据包（爆发的网络流量）</li>
+</ul>
+</li>
+<li>丢包原因
+<ul>
+<li>不可靠的物理介质</li>
+<li>不可靠链路层</li>
+<li>不可靠网络层</li>
+</ul>
+</li>
+</ul>
+<h2 id="tcpudp">TCP/UDP</h2>
+<ul>
+<li>TCP可靠传输问题
+<ul>
+<li>低优先级数据丢失、导致高优先级数据接收（语言包丢了卡了技能）</li>
+<li>多个可靠数据流在底层相互干扰（应用层划分的频道，在底层都是一个TCP通道）</li>
+<li>过时的游戏状态可能因重传而再现、</li>
+</ul>
+</li>
+<li>UDP
+<ul>
+<li>发送时：为每个数据包添加唯一的标识</li>
+<li>接收端：检查数据包，并回送确认ACK消息</li>
+<li>发送端：处理确认信息，管理超时和重传</li>
+</ul>
+</li>
+</ul>
+<h2 id="enet"><code>ENet</code></h2>
+<ul>
+<li>接近原生Socket。</li>
+<li>频道传输</li>
+<li>数据包顺序</li>
+<li>递增序列号</li>
+</ul>
+<h2 id="优化策略">优化策略</h2>
+<h3 id="导航推测法">导航推测法</h3>
+<ul>
+<li>乐观算法，按照之前的状态，推测玩家的状态</li>
+<li>PDU协议数据包
+<ul>
+<li>当前位置、速度、移动方向、加速度</li>
+<li>世界世界模拟的过程中：8s以上，同步PDU，修正误差</li>
+<li>接收到的客户端本地计算模拟移动</li>
+</ul>
+</li>
+<li>弥补措施
+<ul>
+<li>即时状态更新：立即更新到最新状态</li>
+<li>插值：平滑过渡到最新状态</li>
+<li>二阶调整：对加速度重新计算</li>
+</ul>
+</li>
+</ul>
+<h3 id="影子追随算法">影子追随算法</h3>
+<ul>
+<li>为每个新对象创建本地副本</li>
+<li>物体状态改变时，服务端广播PDU</li>
+<li>客户端收到消息后，将副本不停向影子移动</li>
+<li>接收到新的PDU后，修正影子状态</li>
+</ul>
+<p>这里的核心就是插值追随到影子</p>
+<ul>
+<li>优化方式
+<ul>
+<li>相位滞后：始终让模拟的副本滞后于影子。当影子状态发生剧烈变化时，副本也能灵活调整</li>
+<li>惯性移动：运动状态急剧变化时，重置速度，并使用加速度启动。</li>
+</ul>
+</li>
+</ul>
+<h2 id="帧同步">帧同步</h2>
+<ul>
+<li>客户端每个逻辑帧向服务器报告自己的状态和操作</li>
+<li>服务器收到所有客户端上传的当前关键帧数据后运算，把结果返回给客户端</li>
+<li>客户端在下一个关键帧到来之前还未收到数据则帧锁定，进入等待状态</li>
+<li>收到服务器返回后根据数据进行渲染，记录状态和操作下一步</li>
+</ul>
+<h3 id="乐观锁">乐观锁</h3>
+<ul>
+<li>服务器将游戏事件划分为多个逻辑帧回合</li>
+<li>每帧结束时，如果没有收到某个玩家的行动，则认为他放弃了操作，不再等待</li>
+<li>如果网络较慢的玩家上传的操作明显超时、根据需求丢弃或者其他处理</li>
+</ul>
+<h1 id="aoi思想">AOI思想</h1>
+<p>Area of Interest 优化核心思路</p>
+<ul>
+<li>距离划分（例如我们按AOI距离是1来划分）</li>
+<li>可见性剪裁
+<ul>
+<li>划分静态区域（大世界/副本）</li>
+<li>视锥（视锥 + 以玩家为中心的圆更新）</li>
+</ul>
+</li>
+<li>优化可见相关性
+<ul>
+<li>背后脚本声：同步一个音频组件</li>
+</ul>
+</li>
+</ul>
+<h2 id="空间分割法">空间分割法</h2>
+<ul>
+<li>把空间划分为单元格，把物体放入格中</li>
+<li>遍历九个网格对象</li>
+</ul>
+<p>确定：每个格子都是一个独立的容器，存储会占用内存</p>
+<ul>
+<li>
+<h2 id="十字链表法">十字链表法</h2>
+<ul>
+<li>在二维地图里维护两条有序双向链表：</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>XList：所有节点按照 X 坐标从小到大排列</span></span>
+<span class="line"><span>YList：所有节点按照 Y 坐标从小到大排列</span></span></code></pre>
+<ul>
+<li>每个实体同时存在于两条链表中，找一个游戏对象的AOI范围内的其他对象时，只需要分别在这链表的两个方向上进行遍历</li>
+<li>在两个坐标轴上，都可以获得可能的对象，再取交集</li>
+<li>需要排序而且实现复杂</li>
+</ul>
+</li>
+</ul>
+<h2 id="处理aoi">处理AOI</h2>
+<ul>
+<li>观察者和被观察者</li>
+</ul> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <span></span> <a class="article-pagination-next" href="../../posts/2026-07/联机游戏开发指南笔记（一）.html"> <span>OLDER →</span> <strong>联机游戏开发指南笔记（一）</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-07/联机游戏开发指南笔记（一）.html">联机游戏开发指南笔记（一）</a><a href="../../posts/2026-06/UE网络笔记三：属性同步机制.html">UE网络笔记三：属性同步机制</a><a href="../../posts/2026-05/UE网络笔记二：DS和客户端连接.html">UE网络笔记二：DS和客户端连接</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#rtt往返时间"> RTT（往返时间） </a><a class="article-toc-link depth-2" href="#tcpudp"> TCP/UDP </a><a class="article-toc-link depth-2" href="#enet"> ENet </a><a class="article-toc-link depth-2" href="#优化策略"> 优化策略 </a><a class="article-toc-link depth-3" href="#导航推测法"> 导航推测法 </a><a class="article-toc-link depth-3" href="#影子追随算法"> 影子追随算法 </a><a class="article-toc-link depth-2" href="#帧同步"> 帧同步 </a><a class="article-toc-link depth-3" href="#乐观锁"> 乐观锁 </a><a class="article-toc-link depth-2" href="#空间分割法"> 空间分割法 </a><a class="article-toc-link depth-2" href="#十字链表法"> 十字链表法 </a><a class="article-toc-link depth-2" href="#处理aoi"> 处理AOI </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

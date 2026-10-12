@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://pudding-evan.github.io/sitemap.xml
