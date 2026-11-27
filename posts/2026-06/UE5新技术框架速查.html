@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="GDC上有一篇关于如何在虚幻5引擎里保持60帧的演讲，详细讲述了虚幻引擎5从最初版本到现在的性能演进历史，以及主要开发的工具内容相关，UE5.8推出后，也说明可能是最后一个5开头的版本。主要以GDC这篇提到的世界构建 + Gameplay内容为主，综合其他实用内容简单整理一下"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-06/UE5%E6%96%B0%E6%8A%80%E6%9C%AF%E6%A1%86%E6%9E%B6%E9%80%9F%E6%9F%A5.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="UE5新技术框架速查 | Elysium"><meta property="og:description" content="GDC上有一篇关于如何在虚幻5引擎里保持60帧的演讲，详细讲述了虚幻引擎5从最初版本到现在的性能演进历史，以及主要开发的工具内容相关，UE5.8推出后，也说明可能是最后一个5开头的版本。主要以GDC这篇提到的世界构建 + Gameplay内容为主，综合其他实用内容简单整理一下"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-06/UE5%E6%96%B0%E6%8A%80%E6%9C%AF%E6%A1%86%E6%9E%B6%E9%80%9F%E6%9F%A5.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-06-20"><meta property="article:tag" content="Note"><title>UE5新技术框架速查 | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=note">Note</a> <span>2026.06.20</span>  <span>4 MIN READ</span> </div> <h1 id="ue5新技术框架速查">UE5新技术框架速查</h1>
+<p>GDC上有一篇关于如何在虚幻5引擎里保持60帧的演讲，详细讲述了虚幻引擎5从最初版本到现在的性能演进历史，以及主要开发的工具内容相关，UE5.8推出后，也说明可能是最后一个5开头的版本。主要以GDC这篇提到的世界构建 + Gameplay内容为主，综合其他实用内容简单整理一下</p>
+<ul>
+<li>
+<p><strong>Nanite</strong></p>
+<p>高细节几何体渲染的核心框架，解决的是高面数静态几何体的渲染问题，让项目可以使用更高精度的模型</p>
+</li>
+<li>
+<p><strong>Lumen</strong></p>
+<p>动态全局光照和反射，不必完全依赖传统烘焙光照，也能获得动态 GI 和反射</p>
+</li>
+<li>
+<p><strong>World Partition</strong></p>
+<p>大世界流送核心框架，这是一整套内容，基本上是把世界拆成可流送的Cell，按照一定规则进行加载，基本是UE大世界首选方案。还有一系列配套的工具帮助构建开放世界</p>
+</li>
+<li>
+<p><strong>HLOD</strong></p>
+<p>远景简化方案，用远处代理网格替代大量远景对象。一般远处有很多的Actor/Mesh，如果全部正常渲染，管理成本很高，HLOD会提前把一组远处物体生成一个更便宜的代理对象。等待近处时，再切回原始物体。这里和LOD的差别在于，普通的LOD是一个Mesh自己的远近模型切换，而HLOD是很多个对象一个组（例如一整片建筑），整体替换。</p>
+</li>
+<li>
+<p><strong>Runtime Cell Transformer / FastGeo</strong></p>
+<p>轻量实例化相关机制，在Cook和运行时组织阶段，把大量普通的Actor转成更轻量的实例表达。比较适合摆放的静态几何内容。轻量实例化意味着物体不再是一个独立的Actor，更像是保留了Mesh\Material、Transform等等后，再由一个Cell容器进行统一管理。</p>
+</li>
+<li>
+<p><strong>PCG</strong></p>
+<p>程序化内容生成框架，用节点图Graph描述一套生产规则，通过在场景、Landscape、Spline、Actor 或 Volume 中采样数据，生成一批带属性的点，再自动生成Mesh、Foliage、Actor等实际的内容</p>
+</li>
+<li>
+<p><strong>Gameplay Feature</strong></p>
+<p>模块化玩法，简单来说，可以把一组玩法能力、配置和对应资产内容做成类似可动态启用/禁用的插件。它能让玩法模块边界更清楚，也方便按模式、地图、平台或运行状态加载不同功能。</p>
+</li>
+<li>
+<p><strong>GAS</strong></p>
+<p>一套完整的技能系统，这个应该很熟悉不赘述了</p>
+</li>
+<li>
+<p><strong>StateTree</strong></p>
+<p>状态树，区别于状态机或者行为树，StateTree是UE5里面的层级状态机 + 行为选择器组合的混合系统。官方认为是一种通用的层级状态机。结合了行为树的Selector和状态机的State/Transition，我觉得这是一组扩展性很广泛，表达能力也很强大的系统，在AI状态、交互对象状态、角色Gameplay状态、Mass行为、SmartObject行为，含状态语义的Gameplay系统中，都可以考虑使用。</p>
+</li>
+<li>
+<p><strong>Mass</strong></p>
+<p>数据导向的Entity系统。核心思路在于，在不创建大量Actor/UObject的情况下，高效模拟大量的游戏对象，例如人群，车辆、动物或者是简单的NPC。接近ECS的设计思路，并非是传统的Actor驱动逻辑。</p>
+</li>
+<li>
+<p><strong>Smart Object</strong></p>
+<p>世界交互点描述框架。用来把场景中对象或位置声明成可以被AI、Mass Entity或者其他Gameplay系统查询和交互的资源。简单说就是声明”这个位置能提供什么行为”，一个Smort Obeject可以提供多个Slot，每个Slot可以描述一个可占用的位置和对应行为。例如椅子可以坐下，掩体可以蹲伏，门可以打开，工作台可以制作等等。</p>
+</li>
+<li>
+<p><strong>Instanced Actors</strong></p>
+<p>分层实体表达方式。Hydration是把一个轻量的Entity / Instance 升级为一个真正的Actor，而Dehydration则是把Actor降级为轻量的Entity / Instance，Actor可以按需实体化。大量原本是Actor、可能需要进行交互的对象，在远离玩家或者不重要时，切换成Mass Entity，在靠近玩家时恢复成完整的Gameplay对象。这个和FastGeo有点像，但是FastGeo处理的主要是大量不可变的静态几何</p>
+</li>
+<li>
+<p><strong>Nav Mesh Invoker</strong></p>
+<p>动态导航生成策略，核心思路是在玩家或关键对象附近动态生成导航数据，把导航成本限制在真正需要的区域。</p>
+</li>
+<li>
+<p><strong>MVVM</strong></p>
+<p>UI数据绑定框架，大部分项目可能都会提供，核心思路就是让UI相应数据变化，不过既然有官方版本也可以考虑使用官方提供的。</p>
+</li>
+<li>
+<p><strong>Virtual Shadow Maps</strong></p>
+<p>高质量动态阴影方案，用来匹配 Nanite 这类高细节几何体，使用于Nanite 场景等需要大量动态物体投影的项目</p>
+</li>
+<li>
+<p><strong>MegaLights</strong></p>
+<p>大量动态光源方案，目标是让大量重叠、可投射动态阴影的光源以更可控的成本运行</p>
+</li>
+<li>
+<p><strong>Substrate</strong></p>
+<p>新材质框架，原生支持分层与混合材质。适合更复杂的材质层次，例如车漆、涂层、多层表面、皮肤或特殊材质。</p>
+</li>
+<li>
+<p><strong>MetaHuman</strong></p>
+<p>高保真数字人框架，用来创建、编辑、绑定、导出、驱动真人风格角色</p>
+</li>
+<li>
+<p><strong>Motion Matching</strong></p>
+<p>动画选择技术，提前把大量动画片段做成数据库，运行时根据角色当前姿态、速度、未来轨迹、朝向、输入意图等信息，在数据库里搜索“最合适的一帧动画”，然后跳过去并平滑衔接</p>
+</li>
+<li>
+<p><strong>Craft Cartoon visual</strong></p>
+<p>全新卡通着色器，可以轻松创建动漫、卡通以及手绘风格的外观</p>
+</li>
+<li>
+<p><strong>MCP插件</strong></p>
+<p>可以接入主流AGENT操作UE项目</p>
+</li>
+</ul> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-06/UE智能指针小结.html"> <span>← NEWER</span> <strong>UE智能指针小结</strong> </a> <a class="article-pagination-next" href="../../posts/2026-06/UE资产管理笔记下：AssetManager.html"> <span>OLDER →</span> <strong>UE资产管理笔记下：AssetManager</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-06/UE智能指针小结.html">UE智能指针小结</a><a href="../../posts/2026-06/UE资产管理笔记下：AssetManager.html">UE资产管理笔记下：AssetManager</a><a href="../../posts/2026-06/UE资产管理笔记上：资产，加载及数据表.html">UE资产管理笔记上：资产，加载及数据表</a> </div> </section> </footer> </article>  </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

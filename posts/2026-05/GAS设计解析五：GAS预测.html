@@ -1,0 +1,123 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="GAS 预测"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%BA%94%EF%BC%9AGAS%E9%A2%84%E6%B5%8B.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="GAS设计解析五：GAS预测 | Elysium"><meta property="og:description" content="GAS 预测"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-05/GAS%E8%AE%BE%E8%AE%A1%E8%A7%A3%E6%9E%90%E4%BA%94%EF%BC%9AGAS%E9%A2%84%E6%B5%8B.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-05-31"><meta property="article:tag" content="GAS"><title>GAS设计解析五：GAS预测 | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=gas">GAS</a> <span>2026.05.31</span>  <span>11 MIN READ</span> </div> <h1 id="gas设计解析五gas预测">GAS设计解析五：GAS预测</h1>
+<p>前面几篇把 ASC、Attribute、GE、Ability 和 Tag 的关系基本铺开了。预测这一篇要回答的是另一类问题：在多人游戏里，客户端按下技能以后，为什么不用等服务端往返确认就能立刻看到反馈；如果服务端最后拒绝了这次操作，客户端又如何把刚才提前做过的事情撤掉。</p>
+<p>GAS 的预测可以理解为：</p>
+<ol>
+<li>先让客户端提前执行一部分逻辑，然后给这些逻辑产生的副作用打上同一个 PredictionKey。</li>
+<li>服务端随后执行权威逻辑。如果服务端接受，客户端把本地预测结果追平到服务端结果；</li>
+<li>如果服务端拒绝，客户端把这批预测副作用撤掉。</li>
+</ol>
+<p>这个思路和 UE 网络层的基本模型一致：客户端可以发起请求和提前表现，服务端决定最终结果。</p>
+<h2 id="predictionkey-的复制规则">PredictionKey 的复制规则</h2>
+<p><code>FPredictionKey</code> 的主要字段是 <code>Current</code>、<code>Base</code> 和 <code>bIsServerInitiated</code>。<code>Current</code> 表示当前预测动作的 Key。<code>Base</code> 用来描述预测动作之间的依赖关系：如果在已有 Key 的窗口里又生成新 Key，新 Key 会沿着旧 Key 建立一条 Key 链。这样前面的预测动作被拒绝时，依赖它产生的后续预测副作用也能跟着被拒绝或清理。<code>bIsServerInitiated</code> 则表示这个 Key 由服务端发起，用于服务端发起的同步流程。</p>
+<p>源码里更值得关注的是 <code>FPredictionKey::NetSerialize</code>。它有一条非常关键的规则：客户端把 PredictionKey 发给服务端时，Key 会正常序列化过去；服务端把带 PredictionKey 的属性复制回客户端时，只有最初发起预测的客户端会收到这个 Key，其他客户端会收到无效 Key。这个判断通过 <code>PredictiveConnectionObjectKey</code> 完成。这样做的原因很明确。PredictionKey 是预测客户端用来回滚和追平的本地凭证，其他客户端不参与这次预测，也不需要知道这次权威结果对应哪个本地预测动作。其他客户端只需要看服务端最终复制出的 Ability、GE、Attribute、Cue、Tag 状态即可。</p>
+<h2 id="预测窗口把副作用归到同一个-key-下">预测窗口：把副作用归到同一个 Key 下</h2>
+<p>GAS 使用 <code>FScopedPredictionWindow</code> 管理一个预测窗口。预测窗口的作用不是“让代码变得可预测”这么抽象，而是很具体：在这一段调用范围里，把 ASC 的 <code>ScopedPredictionKey</code> 设成当前 Key。后续应用 GE、触发 GameplayCue、发送某些 Ability RPC 时，就能从 ASC 上拿到这个 Key，并把自己归到同一批预测副作用里。</p>
+<p><code>FScopedPredictionWindow</code> 是一个 RAII 对象，也就是构造时进入窗口，析构时离开窗口。具体来说，它构造时保存旧的 <code>ScopedPredictionKey</code>，再写入新的 PredictionKey；析构时恢复旧 Key。服务端版本在析构时还会把 Key 写入 <code>ReplicatedPredictionKeyMap</code>，用来通知预测客户端：这个 Key 在服务端已经处理过，可以进行 CatchUp。</p>
+<p>客户端常见构造方式是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">FScopedPredictionWindow</span><span style="color:#B392F0"> ScopedPredictionWindow</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">this</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">true</span><span style="color:#E1E4E8">);</span></span></code></pre>
+<p>这个构造会在客户端生成新的 PredictionKey。如果当前已经有一个有效的 <code>ScopedPredictionKey</code>，新 Key 会基于旧 Key 生成依赖关系。可以把它想成一条预测链，例如一个预测 Ability 又立刻触发了另一个预测 Ability：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>Ability X Key: 100</span></span>
+<span class="line"><span>Ability Y Key: 101，Base 指向 100</span></span>
+<span class="line"><span>Ability Z Key: 102，Base 仍然追随 100</span></span></code></pre>
+<p>这条链的意义是：后续预测动作不是孤立发生的，它们可以追随前面的预测动作。这里的 Base 更像整条链的起点，相邻 Key 之间的依赖主要由客户端本地回调维护。比如 Ability Y 被服务端拒绝，那么依赖它产生的 Ability Z 相关预测副作用也不应该继续成立。GAS 会通过 PredictionKey 的依赖关系和回调，把 Reject/CatchUp 传递到相关的预测副作用上。服务端处理时仍然以 RPC 传来的 Key 打开对应逻辑范围。</p>
+<p>服务端常见构造方式是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">FScopedPredictionWindow</span><span style="color:#B392F0"> ScopedPredictionWindow</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">this</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">PredictionKey</span><span style="color:#E1E4E8">);</span></span></code></pre>
+<p>服务端使用客户端 RPC 带来的 Key 打开同一逻辑范围。这样服务端在这段范围内应用的 GE、触发的 Cue 等副作用，也会带着同一个 Key。客户端本地已经预测过一份，服务端又复制回来一份时，系统才能知道“这是同一件事”，从而做撤销、追平和去重。</p>
+<p>这里有一个很容易忽略的边界：预测窗口只覆盖当前调用范围。Ability 初始激活时打开的预测窗口，不会自动覆盖所有后续 AbilityTask 回调、Timer 回调或输入释放。<code>GameplayPrediction.h</code> 里专门用 <code>WaitInputRelease</code> 举例：客户端在输入释放回调里如果还要预测新的副作用，需要重新打开预测窗口，生成新的 Key，并通过 RPC 把这个 Key 传给服务端。服务端处理这个 RPC 时，也要用同一个 Key 打开窗口。</p>
+<p>这就是很多“为什么我在 Ability 里应用 GE 却没有预测”的根源。代码仍然写在同一个 Ability 类中，但逻辑已经跨帧，最初的预测窗口早就结束了。</p>
+<h2 id="ability-激活时的预测主线">Ability 激活时的预测主线</h2>
+<p>以 <code>LocalPredicted</code> Ability 为例，客户端从 <code>TryActivateAbility</code> 进入。<code>TryActivateAbility</code> 会先处理网络策略：如果当前不是本地控制端，不能直接激活 LocalOnly 或 LocalPredicted；如果是 ServerOnly 或 ServerInitiated，则客户端只能请求服务端。真正进入 <code>InternalTryActivateAbility</code> 后，系统完成 ActorInfo、网络角色、AbilitySpec、实例策略、CanActivateAbility 等检查。通过检查后，LocalPredicted 分支会打开预测窗口。</p>
+<p>源码中的关键流程可以压缩成：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">FScopedPredictionWindow</span><span style="color:#B392F0"> ScopedPredictionWindow</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">this</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">true</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">ActivationInfo.</span><span style="color:#B392F0">SetPredicting</span><span style="color:#E1E4E8">(ScopedPredictionKey);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">CallServerTryActivateAbility</span><span style="color:#E1E4E8">(Handle, Spec->InputPressed, ScopedPredictionKey);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">AbilitySource-></span><span style="color:#B392F0">CallActivateAbility</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">	Handle,</span></span>
+<span class="line"><span style="color:#E1E4E8">	ActorInfo,</span></span>
+<span class="line"><span style="color:#E1E4E8">	ActivationInfo,</span></span>
+<span class="line"><span style="color:#E1E4E8">	OnGameplayAbilityEndedDelegate,</span></span>
+<span class="line"><span style="color:#E1E4E8">	TriggerEventData</span></span>
+<span class="line"><span style="color:#E1E4E8">);</span></span></code></pre>
+<p>这几行说明了预测激活的本质。客户端先创建 PredictionKey，把当前激活信息标记为 Predicting，然后立即把这个 Key 发给服务端，同时本地继续执行 <code>CallActivateAbility</code>。玩家按下按钮后马上播放动画、进入技能流程，就是从这里来的。</p>
+<p>服务端收到 <code>ServerTryActivateAbility</code> 后，会进入 <code>InternalServerTryActivateAbility</code>。它会找到对应 AbilitySpec，消费客户端已经复制过来的目标数据或输入数据，然后用客户端传来的 PredictionKey 打开服务端预测窗口，再调用 <code>InternalTryActivateAbility</code> 执行权威激活。简化后的主线是：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">FScopedPredictionWindow</span><span style="color:#B392F0"> ScopedPredictionWindow</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">this</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">PredictionKey</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">InternalTryActivateAbility</span><span style="color:#E1E4E8">(Handle, PredictionKey, ...))</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">	// 成功，后续由激活流程和复制追平</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"><span style="color:#F97583">else</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">	ClientActivateAbilityFailed</span><span style="color:#E1E4E8">(Handle, PredictionKey.Current);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>如果服务端拒绝激活，客户端会收到 <code>ClientActivateAbilityFailed</code>。这个 RPC 的实现会广播：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">FPredictionKeyDelegates</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">BroadcastRejectedDelegate</span><span style="color:#E1E4E8">(PredictionKey);</span></span></code></pre>
+<p>所有绑定到这个 PredictionKey 的预测副作用都会收到拒绝通知。预测 GE 会移除，预测 Cue 会清理，Ability 实例也会被结束。这个过程就是 Undo。</p>
+<p>如果服务端接受激活，它会调用 <code>ClientActivateAbilitySucceed</code> 或带 EventData 的成功 RPC。但成功 RPC 不是完整追平。真正表示“服务端带这个 Key 的复制结果已经追上客户端”的，是 <code>ReplicatedPredictionKeyMap</code>。服务端 <code>FScopedPredictionWindow</code> 析构时会把 Key 写入这个 Map；它复制到预测客户端后，会触发：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">FPredictionKeyDelegates</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">BroadcastCaughtUpDelegate</span><span style="color:#E1E4E8">(PredictionKey);</span></span></code></pre>
+<p>客户端收到 CatchUp 后，清理本地预测副作用，保留服务端权威复制结果。可以把两条消息分开理解：<code>ClientActivateAbilitySucceed</code> 是服务端说“这次激活我接受了”，<code>ReplicatedPredictionKeyMap</code> 是服务端说“带这个 Key 的权威结果已经复制到了。”</p>
+<h2 id="gameplayeffect-如何预测">GameplayEffect 如何预测</h2>
+<p>GE 的预测入口首先看权限。<code>UAbilitySystemComponent::HasNetworkAuthorityToApplyGameplayEffect</code> 的逻辑很短：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">return</span><span style="color:#B392F0"> IsOwnerActorAuthoritative</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">||</span><span style="color:#E1E4E8"> PredictionKey.</span><span style="color:#B392F0">IsValidForMorePrediction</span><span style="color:#E1E4E8">();</span></span></code></pre>
+<p>服务端当然有权应用 GE。客户端没有权威，但如果当前持有有效 PredictionKey，就可以预测应用 GE。没有权威也没有 PredictionKey 时，客户端应用 GE 会被拒绝。</p>
+<p><code>ApplyGameplayEffectSpecToSelf</code> 中还有几条重要规则。</p>
+<p>第一，Periodic GameplayEffect 不能预测。周期执行依赖服务端时间和重复触发，客户端提前模拟很容易产生次数、时间和回滚上的复杂问题，所以源码里会直接拒绝预测 Periodic GE。</p>
+<p>第二，客户端预测 Instant GE 时，会把它临时当作 Infinite GE 放进 ActiveGameplayEffects：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#E1E4E8"> bTreatAsInfiniteDuration </span><span style="color:#F97583">=</span></span>
+<span class="line"><span style="color:#B392F0">	GetOwnerRole</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> ROLE_Authority</span></span>
+<span class="line"><span style="color:#F97583">	&#x26;&#x26;</span><span style="color:#E1E4E8"> PredictionKey.</span><span style="color:#B392F0">IsLocalClientKey</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#F97583">	&#x26;&#x26;</span><span style="color:#E1E4E8"> Spec.Def->DurationPolicy </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> Instant;</span></span></code></pre>
+<p>其实很好理解，Instant GE 正常执行完就没有 ActiveGameplayEffect 了，已经宣告结束。而预测需要一个可追踪、可撤销、可 CatchUp 的对象。客户端把预测 Instant GE 临时作为 Infinite GE 保存起来，后续如果 Key 被 Reject 或 CaughtUp，再把这个临时 ActiveGameplayEffect 移除。</p>
+<p>在 <code>FActiveGameplayEffectsContainer::ApplyGameplayEffectSpec</code> 中，客户端预测添加 AGE 时会绑定 PredictionKey 的回调。Reject 时调用 <code>OnRejectedActiveGameplayEffect</code>，CatchUp 时调用 <code>OnCaughtUpActiveGameplayEffect</code>。这两个回调最后都会移除本地预测 AGE，只是语义不同：Reject 是服务端拒绝，本地效果应该撤销；CatchUp 是服务端接受且权威结果到了，本地临时效果应该让位给权威结果。</p>
+<p>服务端复制回来的 <code>FActiveGameplayEffect</code> 也会携带同一个 PredictionKey。预测客户端收到后，<code>FActiveGameplayEffect::PostReplicatedAdd</code> 会判断本地是否已经有同 Key 的预测效果，并抑制一部分 GameplayCue Applied 事件，避免同一个效果播放两次。这就是 Redo 问题的处理。</p>
+<h2 id="attribute-为什么能提前变化">Attribute 为什么能提前变化</h2>
+<p>客户端预测应用 GE 后，Attribute 会在本地提前变化。比如预测一个 Instant Damage GE，客户端 Health 会先扣掉，UI 立刻响应。服务端稍后计算并复制权威属性值回来。如果客户端预测值和服务端不同，客户端会被修正。</p>
+<p>这也是预测 Instant GE 临时转 Infinite 的原因之一。客户端需要一个临时 ActiveGameplayEffect 代表“这次本地预测的属性修正”。CatchUp 到来后，这个临时修正被移除，服务端复制的最终属性值成为权威结果。</p>
+<p>我们之前提到在GE修改属性这一章里提到，Modifier可以被预测，Execution不能被预测，可以更详细的解释一下：Modifier 可以预测，是因为它结构受限：一个 Attribute、一个 Op、一个 Magnitude。只要客户端拥有同样输入，客户端可以先得到同样的属性修正。AttributeBased 和 MMC 也可以参与预测，但前提是客户端能拿到一致的捕获属性、Tag 和 SetByCaller 数据。而ExecutionCalculation 不能预测，是因为它允许执行任意项目代码，可以读取复杂上下文并输出多个属性修改。GAS 不假设客户端一定拥有和服务端相同的数据，也不试图合并客户端和服务端各自执行出的复杂结果。因此 Execution 更适合作为服务端结算点，客户端可以预测表现，但不应该预测最终属性结果。</p>
+<h2 id="gameplaycue-和-tag-的去重">GameplayCue 和 Tag 的去重</h2>
+<p>GameplayCue 的预测和 GE 类似，也是围绕 PredictionKey 做去重和清理。客户端在预测窗口中添加 Cue 时，会走 PredictiveAdd，并把 Cue 的清理绑定到 PredictionKey 的 Reject 或 CatchUp 上。服务端复制或 Multicast Cue 时，如果发现这是预测客户端本地已经处理过的 Key，就会避免重复触发。</p>
+<p><code>GameplayCueInterface.cpp</code> 中可以看到这条主线：<code>PredictiveAdd</code> 更新本地 Cue 状态并注册 PredictionKey 回调，<code>PostReplicatedAdd</code> 对本地预测 Key 做特殊处理，NetMulticast Cue 在预测客户端上会跳过已经本地预测过的事件。这样一个技能本地预测播放了命中特效，服务端复制回来时不会再播放一遍。</p>
+<p>GameplayTag 通常跟随 GE 或 Ability 状态一起预测。预测 GE 授予的 Tag 会先出现在客户端，用于本地 UI、输入和 Ability 判断。服务端结果追平后，Tag 状态以权威复制为准。比如冲刺 Ability 预测授予 <code>State.Dashing</code>，客户端可以立刻进入冲刺表现；如果服务端拒绝，Tag 被撤销，表现回滚。</p>
+<h2 id="什么适合预测">什么适合预测</h2>
+<p>适合预测的内容，一般有两个条件：客户端需要即时反馈，并且这件事的输入足够明确，结果可以被回滚或追平。<code>LocalPredicted</code> Ability 的初始激活、Ability 激活调用栈内应用的 Modifier GE、GameplayCue、ActivationOwnedTags、简单资源消耗和冷却，都属于 GAS 预测重点覆盖的范围。</p>
+<p>不适合预测的内容通常也很明显。ServerOnly Ability 不预测。Periodic GE 不预测。ExecutionCalculation 不预测。依赖服务端隐藏数据、复杂命中验证、反作弊判断、不可复现随机结果的逻辑不应该依赖客户端预测出最终权威结果。客户端可以先做表现层反馈，例如动画、镜头、音效、临时 UI，但最终玩法状态仍然由服务端复制决定。</p>
+<p>跨帧预测要特别小心。Ability 初始激活时的预测窗口只覆盖当时的调用栈。AbilityTask 后续回调如果还要预测 GE 或 Cue，就需要新的 PredictionKey，并通过对应 Server RPC 把 Key 交给服务端。这一点和 UE 网络文章里“本地先做、RPC 到服务端、服务端复制回来追平”的思路一致，只是 GAS 把 Key、回调和副作用管理封装好了。</p>
+<h2 id="举个栗子">举个栗子</h2>
+<p>把前面的内容串起来，一个 LocalPredicted 火球技能可以这样理解。</p>
+<p>玩家按下输入，本地 ASC 调用 <code>TryActivateAbility</code>，找到 <code>GA_Fireball</code> 的 AbilitySpec。因为这是本地控制端，并且 Ability 是 LocalPredicted，系统进入 <code>InternalTryActivateAbility</code> 的预测分支。客户端打开 <code>FScopedPredictionWindow</code>，生成 PredictionKey，把 ActivationInfo 标记为 Predicting，立刻发送 <code>ServerTryActivateAbility</code>，同时本地执行 <code>CallActivateAbility</code>。</p>
+<p>Ability 本地开始播放施法动画，可能授予 <code>State.Casting</code>，触发一个预测 GameplayCue。若在同一预测窗口内应用 Cost GE 或 Cooldown GE，这些 GE 也会带上同一个 PredictionKey。客户端 UI 看到 Mana 减少、技能进入冷却、动画开始播放。玩家获得了即时反馈。</p>
+<p>服务端稍后收到 RPC，用客户端传来的 PredictionKey 打开服务端预测窗口，重新跑 <code>CanActivateAbility</code>、Commit、GE 应用等权威逻辑。如果服务端发现角色已经眩晕、Mana 不足、目标非法，激活失败，服务端发送 <code>ClientActivateAbilityFailed</code>。客户端收到后广播 Rejected Delegate，之前带这个 Key 的预测 GE、Cue、Ability 状态被撤销。</p>
+<p>如果服务端接受，服务端执行 Ability 并复制权威GE、Attribute、Cue、Tag 状态。预测客户端收到带同一个 PredictionKey 的权威结果时，系统知道它对应本地已有预测副作用，于是避免重复播放 Cue。随后 <code>ReplicatedPredictionKeyMap</code> 复制到客户端，广播 CaughtUp Delegate，本地预测用的临时 AGE 和 Cue 记录被清理。最终客户端显示服务端权威状态。</p>
+<h2 id="其他">其他</h2>
+<ul>
+<li>
+<p>预测不是同步。预测让客户端提前表现，真正状态仍然来自服务端复制</p>
+</li>
+<li>
+<p>一个 Ability 类中的所有逻辑不一定都在预测窗口里。跨帧、异步 Task、输入释放、目标数据返回，都需要重新考虑 PredictionKey 的范围。</p>
+</li>
+<li>
+<p>Modifier 可以预测，不代表结果永远正确。客户端输入和服务端输入不一致时，服务端仍然会覆盖。Execution 不能预测，是因为它太自由，不适合作为客户端可复现的提前结算。</p>
+</li>
+</ul>
+<h2 id="总结">总结</h2>
+<p>GAS 预测的主线可以概括为：客户端生成 PredictionKey，在预测窗口中本地执行 Ability、GE、Cue 和 Tag 副作用；同一个 Key 通过 RPC 发给服务端；服务端用这个 Key 执行权威逻辑；失败时 Reject 回滚，成功时复制权威结果，并通过 <code>ReplicatedPredictionKeyMap</code> 触发 CatchUp；客户端清理本地预测副作用，避免重复表现，最终接受服务端状态。</p>
+<p>这几个角色的职责可以理解为:PredictionKey 标记了某个逻辑，<code>FScopedPredictionWindow</code> 负责给一段逻辑范围盖上 Key，Rejected Delegate 负责撤销，CaughtUp Delegate 负责追平。</p>
+<p>关键代码:</p>
+<ul>
+<li><code>FPredictionKey::CreateNewPredictionKey</code></li>
+<li><code>FPredictionKey::GenerateDependentPredictionKey</code></li>
+<li><code>FPredictionKey::NetSerialize</code></li>
+<li><code>FScopedPredictionWindow::FScopedPredictionWindow</code></li>
+<li><code>FScopedPredictionWindow::~FScopedPredictionWindow</code></li>
+<li><code>UAbilitySystemComponent::TryActivateAbility</code></li>
+<li><code>UAbilitySystemComponent::InternalTryActivateAbility</code></li>
+<li><code>UAbilitySystemComponent::InternalServerTryActivateAbility</code></li>
+<li><code>UAbilitySystemComponent::ClientActivateAbilityFailed_Implementation</code></li>
+<li><code>UAbilitySystemComponent::ApplyGameplayEffectSpecToSelf</code></li>
+<li><code>FActiveGameplayEffectsContainer::ApplyGameplayEffectSpec</code></li>
+<li><code>FActiveGameplayCue::PredictiveAdd</code></li>
+</ul> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-05/GAS设计解析四：GA与GameplayTag.html"> <span>← NEWER</span> <strong>GAS设计解析四：GA与GameplayTag</strong> </a> <a class="article-pagination-next" href="../../posts/2026-05/GAS设计解析三：GE属性修改案例.html"> <span>OLDER →</span> <strong>GAS设计解析三：GE属性修改案例</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-05/GAS设计解析四：GA与GameplayTag.html">GAS设计解析四：GA与GameplayTag</a><a href="../../posts/2026-05/GAS设计解析三：GE属性修改案例.html">GAS设计解析三：GE属性修改案例</a><a href="../../posts/2026-05/GAS设计解析二：GameplayEffect.html">GAS设计解析二：GameplayEffect</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#predictionkey-的复制规则"> PredictionKey 的复制规则 </a><a class="article-toc-link depth-2" href="#预测窗口把副作用归到同一个-key-下"> 预测窗口：把副作用归到同一个 Key 下 </a><a class="article-toc-link depth-2" href="#ability-激活时的预测主线"> Ability 激活时的预测主线 </a><a class="article-toc-link depth-2" href="#gameplayeffect-如何预测"> GameplayEffect 如何预测 </a><a class="article-toc-link depth-2" href="#attribute-为什么能提前变化"> Attribute 为什么能提前变化 </a><a class="article-toc-link depth-2" href="#gameplaycue-和-tag-的去重"> GameplayCue 和 Tag 的去重 </a><a class="article-toc-link depth-2" href="#什么适合预测"> 什么适合预测 </a><a class="article-toc-link depth-2" href="#举个栗子"> 举个栗子 </a><a class="article-toc-link depth-2" href="#其他"> 其他 </a><a class="article-toc-link depth-2" href="#总结"> 总结 </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

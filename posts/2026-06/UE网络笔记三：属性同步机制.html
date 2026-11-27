@@ -1,0 +1,498 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="施工中..."><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-06/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%89%EF%BC%9A%E5%B1%9E%E6%80%A7%E5%90%8C%E6%AD%A5%E6%9C%BA%E5%88%B6.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="UE网络笔记三：属性同步机制 | Elysium"><meta property="og:description" content="施工中..."><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-06/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%89%EF%BC%9A%E5%B1%9E%E6%80%A7%E5%90%8C%E6%AD%A5%E6%9C%BA%E5%88%B6.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-06-07"><meta property="article:tag" content="Net"><title>UE网络笔记三：属性同步机制 | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=net">Net</a> <span>2026.06.07</span>  <span>9 MIN READ</span> </div> <h1 id="ue网络笔记三属性同步和rpc">UE网络笔记三：属性同步和RPC</h1>
+<h2 id="属性复制的注册与布局">属性复制的注册与布局</h2>
+<h3 id="注册写法">注册写法</h3>
+<p>一个典型的写法如下</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">class AMyActor : public AActor</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">	GENERATED_BODY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">(Replicated)</span></span>
+<span class="line"><span style="color:#F97583">	bool</span><span style="color:#E1E4E8"> Test;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">	virtual </span><span style="color:#F97583">void</span><span style="color:#B392F0"> GetLifetimeReplicatedProps</span><span style="color:#E1E4E8">(TArray</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">class FLifetimeProperty</span><span style="color:#F97583">>&#x26;</span><span style="color:#E1E4E8"> OutLifetimeProps) </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> override</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#B392F0">		Super::GetLifetimeReplicatedProps</span><span style="color:#E1E4E8">(OutLifetimeProps);</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#B392F0">		DOREPLIFETIME_CONDITION</span><span style="color:#E1E4E8">(AMyActor, Test, COND_None)</span></span>
+<span class="line"><span style="color:#E1E4E8">	};</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>这里有两处声明。第一处是 <code>UPROPERTY(Replicated)</code> ，UHT会把这个字段标记成带复制语义的<code>FProperty</code>给反射系统。第二处则是<code>GetLifetimeReplicatedProps</code> 和<code>DOREPLIFETIME</code>。这是告诉网络系统，这个类的这个属性，将会进入复制列表</p>
+<p>可以看下宏展开</p>
+<img src="./UE网络笔记三：属性同步机制/images/image1.png" alt="image1" style="zoom: 67%;">
+<p>这里其实有很多细节，一一解释下。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">FDoRepLifetimeParams LocalDoRepParams;</span></span>
+<span class="line"><span style="color:#E1E4E8">LocalDoRepParams.Condition </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> COND_None;</span></span></code></pre>
+<p><code>FDoRepLifetimeParams</code> 可以理解为复制注册时的附加配置，字段例如。主要作用很简单，就是描述这个属性在复制布局里的复制规则，具体不赘述了。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">FDoRepLifetimeParams LocalDoRepParams;</span></span>
+<span class="line"><span style="color:#E1E4E8">LocalDoRepParams.Condition </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> COND_None;</span></span>
+<span class="line"><span style="color:#E1E4E8">LocalDoRepParams.RepNotifyCondition </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> REPNOTIFY_OnChanged;</span></span>
+<span class="line"><span style="color:#E1E4E8">LocalDoRepParams.bIsPushBased </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span></code></pre>
+<p>核心展开这一段</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#B392F0">static_assert</span><span style="color:#E1E4E8">(ValidateReplicatedClassInheritance</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">AMyActor, ThisClass</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(),</span><span style="color:#9ECBFF">"AMyActor"</span><span style="color:#9ECBFF"> "."</span><span style="color:#9ECBFF"> "Test"</span><span style="color:#9ECBFF"> " is not accessible from this class."</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">FProperty</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> ReplicatedProperty </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetReplicatedProperty</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">StaticClass</span><span style="color:#E1E4E8">(), </span><span style="color:#B392F0">AMyActor::StaticClass</span><span style="color:#E1E4E8">(),</span></span>
+<span class="line"><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FName</span><span style="color:#E1E4E8">(((</span><span style="color:#F97583">void</span><span style="color:#E1E4E8">)</span><span style="color:#F97583">sizeof</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UEAsserts_Private::GetMemberNameCheckedJunk</span><span style="color:#E1E4E8">(((AMyActor</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">)</span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">)</span><span style="color:#F97583">-></span><span style="color:#FFAB70">Test</span><span style="color:#E1E4E8">)), L</span><span style="color:#9ECBFF">"Test"</span><span style="color:#E1E4E8">_PrivateSV))));</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">RegisterReplicatedLifetimeProperty</span><span style="color:#E1E4E8">(ReplicatedProperty, OutLifetimeProps,FixupParams</span><span style="color:#F97583">&#x3C;</span><span style="color:#B392F0">decltype</span><span style="color:#E1E4E8">(AMyActor::Test)</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(LocalDoRepParams));</span></span></code></pre>
+<p><code>ValidateReplicatedClassInheritance</code>这里是检查当前类和写入的AMyActor继承关系是否合法，如果是继承关系或者同一个类，就能过断言，否则输出错误信息</p>
+<p><code>GetReplicatedProperty</code>则是通过反射系统，最终拿到一个<code>FProperty</code>,这是反射层的属性描述对象，里面包含了诸如属性名、类型、在对象内存中的偏移等等。在这个例子中，它对应的是bool属性描述，即<code>FBoolProperty</code></p>
+<p>这个宏展开里运用了一个C++技巧</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#B392F0">FName</span><span style="color:#E1E4E8">((</span><span style="color:#F97583">sizeof</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UEAsserts_Private::GetMemberNameCheckedJunk</span><span style="color:#E1E4E8">(((AMyActor</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">)</span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">)</span><span style="color:#F97583">-></span><span style="color:#FFAB70">Test</span><span style="color:#E1E4E8">))), L</span><span style="color:#9ECBFF">"Test"</span><span style="color:#E1E4E8">_PrivateSV))</span></span></code></pre>
+<p><code>((ACharacter*)0)->bIsCrouched</code>，这是一个类成员访问表达式，这里在危险的访问空指针，但是此表达式又被<code>Sizeof</code>包裹，<code>sizeof</code>如果应用于表达式，并不会真正进行求值，所以这里并不会真的进行解引用，可以见<a href="https://en.cppreference.com/cpp/language/sizeof%E3%80%82">https://en.cppreference.com/cpp/language/sizeof。</a></p>
+<p>因此，这段内容其实是在强迫编译器进行编译期类型检查，确认AMyActor是不是真的有Test这个成员。这一长串其实基本等价于下面这段，这样就很清楚了。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">FProperty</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> ReplicatedProperty </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetReplicatedProperty</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">StaticClass</span><span style="color:#E1E4E8">(), </span><span style="color:#B392F0">AMyActor::StaticClass</span><span style="color:#E1E4E8">(),(</span><span style="color:#B392F0">FName</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">TEXT</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"Test"</span><span style="color:#E1E4E8">));</span></span></code></pre>
+<p>最后<code>RegisterReplicatedLifetimeProperty</code> 是为了返回<code>OutLifetimeProps</code>，那些属性要复制，以及用什么规则复制等内容，最终都会登记到<code>OutLifetimeProps</code>中，交给后续的<code>FRepLayout</code>消费。</p>
+<h3 id="freplayout">FRepLayOut</h3>
+<p>通常当某个类第一次参与网络复制时，引擎要为这个类创建FRepLayout。可以看到，这里是通过CDO来调用<code>GetLifetimeReplicatedProps</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">FRepLayout::CreateFromClass</span></span>
+<span class="line"><span style="color:#E1E4E8">	RepLayout</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">InitFromClass</span></span>
+<span class="line"><span style="color:#E1E4E8">        UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Object </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> InObjectClass</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetDefaultObject</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">		Object</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetLifetimeReplicatedProps</span><span style="color:#E1E4E8">(LifetimeProps);</span></span></code></pre>
+<p>见<code>UNetDriver::GetObjectClassRepLayout</code>，RepLayoutMap缓存了所有的UClass的属性复制信息。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">TSharedPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FRepLayout</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> UNetDriver::</span><span style="color:#B392F0">GetObjectClassRepLayout</span><span style="color:#E1E4E8">( UClass </span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Class</span><span style="color:#E1E4E8"> )</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    TSharedPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FRepLayout</span><span style="color:#F97583">>*</span><span style="color:#E1E4E8"> RepLayoutPtr </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> RepLayoutMap.</span><span style="color:#B392F0">Find</span><span style="color:#E1E4E8">(Class);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">RepLayoutPtr)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">       ECreateRepLayoutFlags Flags </span><span style="color:#F97583">=</span><span style="color:#B392F0"> MaySendProperties</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">?</span><span style="color:#E1E4E8"> ECreateRepLayoutFlags</span><span style="color:#F97583">:</span><span style="color:#E1E4E8">:MaySendProperties : ECreateRepLayoutFlags::None;</span></span>
+<span class="line"><span style="color:#E1E4E8">       RepLayoutPtr </span><span style="color:#F97583">=</span><span style="color:#F97583"> &#x26;</span><span style="color:#E1E4E8">RepLayoutMap.</span><span style="color:#B392F0">Add</span><span style="color:#E1E4E8">(Class, </span><span style="color:#B392F0">FRepLayout::CreateFromClass</span><span style="color:#E1E4E8">(Class, ServerConnection, Flags));</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#F97583"> *</span><span style="color:#E1E4E8">RepLayoutPtr;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p><code>OutLifetimeProps</code> 是在 <code>GetLifetimeReplicatedProps</code> 里声明出来的“原始复制属性列表”。<code>FRepLayout</code> 是引擎根据这份列表、反射信息、属性类型、条件、RepNotify 等内容生成对应的UClass/UStruct/UFunction的“网络复制布局”。</p>
+<p><code>FRepLayout</code>引擎这里写了一大段注释，总结内容如下</p>
+<ol>
+<li>FRepLayout负责保存某个类型的可复制属性信息，诸如读取、写入属性状态，比较前后变化、序列/反序列网络数据。同一个类型只会有一个FRepLayout，描述的是类型的复制规则。</li>
+<li>Commands：描述某个属性，例如类型、内存中的布局、如何序列化，如何比较值，变化时是否触发RepNotify等等。</li>
+<li>关于顶层属性命令（<code>FRepParentCmd</code>）和子属性命令（<code>FRepLayoutCmd</code>），例如如果是一个C风格的数据，会有一个父命令和数组中每个元素生成一个子命令等等。</li>
+<li><code>ChnageLists</code>：不保存属性值，而保存哪些属性发生了变化，存储的是Property Handle。发送前，依次比较Layout Commands的状态，如果属性不同，就把handle写入。它的作用是告诉复制系统，这次需要处理这些属性。</li>
+<li>接受时候发送数据里就已经带上了handle，通过handle找到对应的Layout Command，再反序列化属性值。</li>
+<li>丢包与重发机制：维护一个缓冲区跟踪最近发送的变更列表
+<ol>
+<li>收到 ACK：说明包到了，可以删除这条历史。</li>
+<li>收到NAK：包丢了，把对应的<code>Changelist</code>合并进下一次复制，重新发送</li>
+<li>长时间无ACK/NAK，为了避免缓冲区溢出，会把历史里的<code>Changelist</code>合并一起发</li>
+</ol>
+</li>
+</ol>
+<p>这里基本解释了属性同步各种相关细节。</p>
+<h3 id="属性同步">属性同步</h3>
+<p>回到一帧，属性同步的入口函数仍在<code>UActorChannel::ReplicateActor</code>这里，调用路径如下，最终走到<code>RepLayout::ReplicateProperties</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#B392F0">UActorChannel</span><span style="color:#E1E4E8">::ReplicateActor</span></span>
+<span class="line"><span style="color:#B392F0">    ActorReplicator</span><span style="color:#E1E4E8">::ReplicateProperties</span></span>
+<span class="line"><span style="color:#B392F0">    	RepLayout</span><span style="color:#E1E4E8">::ReplicateProperties</span></span></code></pre>
+<h3 id="发送端">发送端</h3>
+<h4 id="actorchannel-创建-foutbunch">ActorChannel 创建 FOutBunch</h4>
+<p><code>ServerReplicateActors</code> 负责筛 Actor、筛连接、算优先级。写网络数据的位置是 <code>UActorChannel::ReplicateActor</code>。这里会先创建一个 <code>FOutBunch</code>，如果这是这个 Actor 在该连接上的初始复制，还会先把创建 Actor 所需的信息写进去。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">int64 UActorChannel::</span><span style="color:#B392F0">ReplicateActor</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FOutBunch </span><span style="color:#B392F0">Bunch</span><span style="color:#E1E4E8">(this, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span><span style="color:#6A737D"> //这里的Bunch是 ActorChannel 这一帧准备发送的一段逻辑消息。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (RepFlags.bNetInitial </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> OpenedLocally)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Connection->PackageMap-></span><span style="color:#B392F0">SerializeNewActor</span><span style="color:#E1E4E8">(Bunch, this, static_cast</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">AActor</span><span style="color:#F97583">*&#x26;></span><span style="color:#E1E4E8">(Actor));</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        bWroteSomethingImportant </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">bIsNewlyReplicationPaused)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        bWroteSomethingImportant </span><span style="color:#F97583">|=</span><span style="color:#E1E4E8"> ActorReplicator-></span><span style="color:#B392F0">ReplicateProperties</span><span style="color:#E1E4E8">(Bunch, RepFlags);</span></span>
+<span class="line"><span style="color:#E1E4E8">        bWroteSomethingImportant </span><span style="color:#F97583">|=</span><span style="color:#B392F0"> DoSubObjectReplication</span><span style="color:#E1E4E8">(Bunch, RepFlags);</span></span>
+<span class="line"><span style="color:#E1E4E8">        bWroteSomethingImportant </span><span style="color:#F97583">|=</span><span style="color:#B392F0"> UpdateDeletedSubObjects</span><span style="color:#E1E4E8">(Bunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (bWroteSomethingImportant)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        FPacketIdRange PacketRange </span><span style="color:#F97583">=</span><span style="color:#B392F0"> SendBunch</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">Bunch, </span><span style="color:#79B8FF">1</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h4 id="fobjectreplicator-写属性-payload">FObjectReplicator 写属性 payload</h4>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#E1E4E8"> FObjectReplicator::</span><span style="color:#B392F0">ReplicateProperties</span><span style="color:#E1E4E8">(FOutBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">, FReplicationFlags </span><span style="color:#FFAB70">RepFlags</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FNetBitWriter </span><span style="color:#B392F0">Writer</span><span style="color:#E1E4E8">(Bunch.PackageMap, </span><span style="color:#79B8FF">8192</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#B392F0"> ReplicateProperties_r</span><span style="color:#E1E4E8">(Bunch, RepFlags, Writer);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">bool</span><span style="color:#E1E4E8"> FObjectReplicator::</span><span style="color:#B392F0">ReplicateProperties_r</span><span style="color:#E1E4E8">(FOutBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">, FReplicationFlags </span><span style="color:#FFAB70">RepFlags</span><span style="color:#E1E4E8">, FNetBitWriter</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Writer</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#E1E4E8"> ERepLayoutResult UpdateResult </span><span style="color:#F97583">=</span><span style="color:#B392F0"> FNetSerializeCB::UpdateChangelistMgr</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">RepLayout, SendingRepState, </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">ChangelistMgr, Object, Connection->Driver->ReplicationFrame, RepFlags, OwningChannel->bForceCompareProperties </span><span style="color:#F97583">||</span><span style="color:#E1E4E8"> bUseCheckpointRepState);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> bool</span><span style="color:#E1E4E8"> bHasRepLayout </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> RepLayout-></span><span style="color:#B392F0">ReplicateProperties</span><span style="color:#E1E4E8">(SendingRepState, ChangelistMgr-></span><span style="color:#B392F0">GetRepChangelistState</span><span style="color:#E1E4E8">(), (uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">)Object, ObjectClass, OwningChannel, Writer, RepFlags);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (RemoteFunctions </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> nullptr </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> RemoteFunctions-></span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Writer.</span><span style="color:#B392F0">SerializeBits</span><span style="color:#E1E4E8">(RemoteFunctions-></span><span style="color:#B392F0">GetData</span><span style="color:#E1E4E8">(), RemoteFunctions-></span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">        RemoteFunctions-></span><span style="color:#B392F0">Reset</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        RemoteFuncInfo.</span><span style="color:#B392F0">Empty</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> bool</span><span style="color:#E1E4E8"> WroteImportantData </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Writer.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">!=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (WroteImportantData)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        OwningChannel-></span><span style="color:#B392F0">WriteContentBlockPayload</span><span style="color:#E1E4E8">(Object, Bunch, bHasRepLayout, Writer);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#E1E4E8"> WroteImportantData;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<ul>
+<li>
+<p><code>FObjectReplicator</code> 并不是直接把每个属性写进 <code>FOutBunch</code>。它先准备一个临时的 <code>FNetBitWriter Writer</code>，让 <code>FRepLayout</code> 把属性差异写进去。等确认真的写了东西，再通过 <code>UActorChannel::WriteContentBlockPayload</code> 把这段 payload 塞进 <code>Bunch</code>。</p>
+</li>
+<li>
+<p><code>RemoteFunctions</code> 某些 RPC，典型如默认策略下的 unreliable multicast RPC，不一定立刻单独发一个 bunch，而是先排到这个对象的 replicator 上，等属性复制时一起追加到同一个 content block 的 payload 后面。</p>
+</li>
+</ul>
+<h4 id="freplayout-生成并写出-changelist">FRepLayout 生成并写出 changelist</h4>
+<p><code>FRepLayout::ReplicateProperties</code>接收的是 changelist，而不是完整对象。发送侧关心的是这次哪些 property handle 需要发。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#E1E4E8"> FRepLayout::</span><span style="color:#B392F0">ReplicateProperties</span><span style="color:#E1E4E8">(FSendingRepState</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> RepState</span><span style="color:#E1E4E8">, FRepChangelistState</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> RepChangelistState</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> FConstRepObjectDataBuffer </span><span style="color:#FFAB70">Data</span><span style="color:#E1E4E8">, UClass</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> ObjectClass</span><span style="color:#E1E4E8">, UActorChannel</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> OwningChannel</span><span style="color:#E1E4E8">, FNetBitWriter</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Writer</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> FReplicationFlags</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> RepFlags</span><span style="color:#E1E4E8">) </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">    // 省略条件复制、ACK/NAK 历史维护等逻辑，只保留 changelist 合并</span></span>
+<span class="line"><span style="color:#6A737D">    // ...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    TArray</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">uint16</span><span style="color:#F97583">>&#x26;</span><span style="color:#E1E4E8"> Changed </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PossibleNewHistoryItem.Changed;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (int32 i </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> RepState->LastChangelistIndex; i </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> RepChangelistState->HistoryEnd; </span><span style="color:#F97583">++</span><span style="color:#E1E4E8">i)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        FRepChangedHistory</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> HistoryItem </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> RepChangelistState->ChangeHistory[i </span><span style="color:#F97583">%</span><span style="color:#E1E4E8"> FRepChangelistState::MAX_CHANGE_HISTORY];</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        TArray</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">uint16</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Temp </span><span style="color:#F97583">=</span><span style="color:#B392F0"> MoveTemp</span><span style="color:#E1E4E8">(Changed);</span></span>
+<span class="line"><span style="color:#B392F0">        MergeChangeList</span><span style="color:#E1E4E8">(Data, HistoryItem.Changed, Temp, Changed);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Changed.</span><span style="color:#B392F0">Num</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        SendProperties</span><span style="color:#E1E4E8">(RepState, ChangeTracker, Data, ObjectClass, Writer, Changed, RepChangelistState->SharedSerialization, RepFlags.bSerializePropertyNames </span><span style="color:#F97583">?</span><span style="color:#E1E4E8"> ESerializePropertyType</span><span style="color:#F97583">:</span><span style="color:#E1E4E8">:Name : ESerializePropertyType::</span><span style="color:#79B8FF">Handle</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这一层可以理解成：<code>UpdateChangelistMgr</code> 负责比较对象当前内存和 shadow state，得到“变化列表”；<code>FRepLayout::ReplicateProperties</code> 再结合 ACK/NAK 历史、条件复制、初始复制等状态，把本次应该发送的 changelist 合并出来；最后 <code>SendProperties</code> 按 property handle 或属性名写出实际属性数据。</p>
+<h4 id="content-block-包装对象-payload">content block 包装对象 payload</h4>
+<p>等属性或 RPC payload 写完以后，<code>UActorChannel::WriteContentBlockPayload</code> 会给这段 payload 套一层 content block 头。content block 是 ActorChannel 里的对象级分段：它告诉接收端“接下来这段 payload 属于 Actor 本身，还是某个 Component/Subobject”。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">int32 UActorChannel::</span><span style="color:#B392F0">WriteContentBlockPayload</span><span style="color:#E1E4E8">(UObject</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Obj</span><span style="color:#E1E4E8">, FNetBitWriter</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#F97583"> bool</span><span style="color:#FFAB70"> bHasRepLayout</span><span style="color:#E1E4E8">, FNetBitWriter</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Payload</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#E1E4E8"> int32 StartHeaderBits </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    WriteContentBlockHeader</span><span style="color:#E1E4E8">(Obj, Bunch, bHasRepLayout);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    uint32 NumPayloadBits </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Payload.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    Bunch.</span><span style="color:#B392F0">SerializeIntPacked</span><span style="color:#E1E4E8">(NumPayloadBits);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#E1E4E8"> int32 HeaderNumBits </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">-</span><span style="color:#E1E4E8"> StartHeaderBits;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    Bunch.</span><span style="color:#B392F0">SerializeBits</span><span style="color:#E1E4E8">(Payload.</span><span style="color:#B392F0">GetData</span><span style="color:#E1E4E8">(), Payload.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#E1E4E8"> HeaderNumBits;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> UActorChannel::</span><span style="color:#B392F0">WriteContentBlockHeader</span><span style="color:#E1E4E8">(UObject</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Obj</span><span style="color:#E1E4E8">, FNetBitWriter</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#F97583"> bool</span><span style="color:#FFAB70"> bHasRepLayout</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    Bunch.</span><span style="color:#B392F0">WriteBit</span><span style="color:#E1E4E8">(bHasRepLayout </span><span style="color:#F97583">?</span><span style="color:#79B8FF"> 1</span><span style="color:#F97583"> :</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> bool</span><span style="color:#E1E4E8"> IsActor </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Obj </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> Actor;</span></span>
+<span class="line"><span style="color:#E1E4E8">    Bunch.</span><span style="color:#B392F0">WriteBit</span><span style="color:#E1E4E8">(IsActor </span><span style="color:#F97583">?</span><span style="color:#79B8FF"> 1</span><span style="color:#F97583"> :</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">IsActor)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch </span><span style="color:#F97583">&#x3C;&#x3C;</span><span style="color:#E1E4E8"> Obj;</span></span>
+<span class="line"><span style="color:#6A737D">        // 后面还会写 stable name、delete 标记、class、outer 等 subobject 信息</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>所以一个 ActorChannel 的 bunch 里，内容大概长这样：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="text"><code><span class="line"><span>FOutBunch</span></span>
+<span class="line"><span>    [如果是初始复制] NewActor 信息</span></span>
+<span class="line"><span>    ContentBlock(Actor)</span></span>
+<span class="line"><span>        bHasRepLayout</span></span>
+<span class="line"><span>        bIsActor = true</span></span>
+<span class="line"><span>        PayloadBits</span></span>
+<span class="line"><span>        属性复制数据</span></span>
+<span class="line"><span>        可能追加的 queued RPC 数据</span></span>
+<span class="line"><span>    ContentBlock(Component/Subobject)</span></span>
+<span class="line"><span>        bHasRepLayout</span></span>
+<span class="line"><span>        bIsActor = false</span></span>
+<span class="line"><span>        Subobject NetGUID / Class / Outer ...</span></span>
+<span class="line"><span>        PayloadBits</span></span>
+<span class="line"><span>        属性复制数据或 RPC 数据</span></span></code></pre>
+<h3 id="接收端">接收端</h3>
+<h4 id="从-finbunch-找到对象-payload">从 FInBunch 找到对象 payload</h4>
+<p>接收侧的入口在更底层。<code>UNetConnection</code> 从 packet 中拆出 <code>FInBunch</code>，根据 bunch header 找到 channel，再进入对应 channel 的业务处理。<code>UActorChannel::ProcessBunchInternal</code> 先处理 Actor 是否已经存在。对于初始复制，发送侧写了 <code>SerializeNewActor</code>，接收侧也用同一个接口读取，可能找到已有 Actor，也可能 spawn 一个新的 Actor。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> UActorChannel::</span><span style="color:#B392F0">ProcessBunchInternal</span><span style="color:#E1E4E8">(FInBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FReplicationFlags RepFlags;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Actor </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> NULL</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">Bunch.bOpen)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            return</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        AActor</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> NewChannelActor </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> NULL</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        bSpawnedNewActor </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Connection->PackageMap-></span><span style="color:#B392F0">SerializeNewActor</span><span style="color:#E1E4E8">(Bunch, this, NewChannelActor);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">        SetChannelActor</span><span style="color:#E1E4E8">(NewChannelActor, Flags);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">        NotifyActorChannelOpen</span><span style="color:#E1E4E8">(Actor, Bunch);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        RepFlags.bNetInitial </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">Bunch.</span><span style="color:#B392F0">AtEnd</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> Connection </span><span style="color:#F97583">!=</span><span style="color:#79B8FF"> NULL</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        FNetBitReader </span><span style="color:#B392F0">Reader</span><span style="color:#E1E4E8">(Bunch.PackageMap, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        bool</span><span style="color:#E1E4E8"> bHasRepLayout </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> RepObj </span><span style="color:#F97583">=</span><span style="color:#B392F0"> ReadContentBlockPayload</span><span style="color:#E1E4E8">(Bunch, Reader, bHasRepLayout);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        TSharedRef</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FObjectReplicator</span><span style="color:#F97583">>&#x26;</span><span style="color:#E1E4E8"> Replicator </span><span style="color:#F97583">=</span><span style="color:#B392F0"> FindOrCreateReplicator</span><span style="color:#E1E4E8">(RepObj);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        bool</span><span style="color:#E1E4E8"> bHasUnmapped </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        Replicator-></span><span style="color:#B392F0">ReceivedBunch</span><span style="color:#E1E4E8">(Reader, RepFlags, bHasRepLayout, bHasUnmapped);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (auto RepComp </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ReplicationMap.</span><span style="color:#B392F0">CreateIterator</span><span style="color:#E1E4E8">(); RepComp; </span><span style="color:#F97583">++</span><span style="color:#E1E4E8">RepComp)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        RepComp.</span><span style="color:#B392F0">Value</span><span style="color:#E1E4E8">()-></span><span style="color:#B392F0">PostReceivedBunch</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Actor </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> bSpawnedNewActor)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Actor-></span><span style="color:#B392F0">PostNetInit</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这里和发送侧的 content block 对上了。<code>ReadContentBlockPayload</code> 会先读 content block header，确认这段 payload 属于哪个对象，再根据 <code>NumPayloadBits</code> 从 <code>Bunch</code> 中切出一段独立的 <code>Reader</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#E1E4E8">UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> UActorChannel::</span><span style="color:#B392F0">ReadContentBlockPayload</span><span style="color:#E1E4E8">(FInBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">, FNetBitReader</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> OutPayload</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool&#x26;</span><span style="color:#FFAB70"> bOutHasRepLayout</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> RepObj </span><span style="color:#F97583">=</span><span style="color:#B392F0"> ReadContentBlockHeader</span><span style="color:#E1E4E8">(Bunch, bObjectDeleted, bOutHasRepLayout);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (bObjectDeleted)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        OutPayload.</span><span style="color:#B392F0">SetData</span><span style="color:#E1E4E8">(Bunch, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#E1E4E8"> nullptr;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    uint32 NumPayloadBits </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    Bunch.</span><span style="color:#B392F0">SerializeIntPacked</span><span style="color:#E1E4E8">(NumPayloadBits);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    OutPayload.</span><span style="color:#B392F0">SetData</span><span style="color:#E1E4E8">(Bunch, NumPayloadBits);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#E1E4E8"> RepObj;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h4 id="fobjectreplicator-读取属性">FObjectReplicator 读取属性</h4>
+<p><code>FObjectReplicator::ReceivedBunch</code>会先处理 <code>bHasRepLayout</code> 对应的普通属性复制，再继续读取后续的 field payload。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#E1E4E8"> FObjectReplicator::</span><span style="color:#B392F0">ReceivedBunch</span><span style="color:#E1E4E8">(FNetBitReader</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> FReplicationFlags</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> RepFlags</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#F97583"> bool</span><span style="color:#FFAB70"> bHasRepLayout</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool&#x26;</span><span style="color:#FFAB70"> bOutHasUnmapped</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (bHasRepLayout)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">bHasReplicatedProperties)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#E1E4E8">            bHasReplicatedProperties </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#B392F0">            PreNetReceive</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        EReceivePropertiesFlags ReceivePropFlags </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> EReceivePropertiesFlags::None;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (ConnectionNetDriver-></span><span style="color:#B392F0">ShouldReceiveRepNotifiesForObject</span><span style="color:#E1E4E8">(Object))</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#E1E4E8">            ReceivePropFlags </span><span style="color:#F97583">|=</span><span style="color:#E1E4E8"> EReceivePropertiesFlags::RepNotifies;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        bool</span><span style="color:#E1E4E8"> bLocalHasUnmapped </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">        bool</span><span style="color:#E1E4E8"> bGuidsChanged </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        LocalRepLayout.</span><span style="color:#B392F0">ReceiveProperties</span><span style="color:#E1E4E8">(OwningChannel, ObjectClass, RepState-></span><span style="color:#B392F0">GetReceivingRepState</span><span style="color:#E1E4E8">(), Object, Bunch, bLocalHasUnmapped, bGuidsChanged, ReceivePropFlags);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">OwningChannel-></span><span style="color:#B392F0">ReadFieldHeaderAndPayload</span><span style="color:#E1E4E8">(Object, ClassCache, NetFieldExportGroup, Bunch, </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">FieldCache, Reader))</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (FStructProperty</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> ReplicatedProp </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> CastField</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FStructProperty</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(FieldCache->Field.</span><span style="color:#B392F0">ToField</span><span style="color:#E1E4E8">()))</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#B392F0">            FNetSerializeCB::ReceiveCustomDeltaProperty</span><span style="color:#E1E4E8">(LocalRepLayout, ReceivingRepState, Parms, ReplicatedProp);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h4 id="freplayout-还原属性并记录-repnotify">FRepLayout 还原属性并记录 RepNotify</h4>
+<p>普通属性的还原发生在 <code>FRepLayout::ReceiveProperties</code> 中。它先读 property handle，再通过 handle 找到对应的 layout command，把网络数据反序列化回对象内存。接收过程中如果开启 RepNotify，还会把需要触发的属性记录到 <code>ReceivingRepState->RepNotifies</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#E1E4E8"> FRepLayout::</span><span style="color:#B392F0">ReceiveProperties</span><span style="color:#E1E4E8">(UActorChannel</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> OwningChannel</span><span style="color:#E1E4E8">, UClass</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> InObjectClass</span><span style="color:#E1E4E8">, FReceivingRepState</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> RepState</span><span style="color:#E1E4E8">, UObject</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Object</span><span style="color:#E1E4E8">, FNetBitReader</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> InBunch</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool&#x26;</span><span style="color:#FFAB70"> bOutHasUnmapped</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool&#x26;</span><span style="color:#FFAB70"> bOutGuidsChanged</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> EReceivePropertiesFlags </span><span style="color:#FFAB70">ReceiveFlags</span><span style="color:#E1E4E8">) </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FReceivePropertiesSharedParams Params{</span></span>
+<span class="line"><span style="color:#E1E4E8">        bDoChecksum,</span></span>
+<span class="line"><span style="color:#B392F0">        EnumHasAnyFlags</span><span style="color:#E1E4E8">(ReceiveFlags, EReceivePropertiesFlags::SkipRoleSwap)</span></span>
+<span class="line"><span style="color:#F97583">            ||</span><span style="color:#F97583"> !</span><span style="color:#B392F0">EnumHasAnyFlags</span><span style="color:#E1E4E8">(Flags, ERepLayoutFlags::IsActor),</span></span>
+<span class="line"><span style="color:#E1E4E8">        InBunch,</span></span>
+<span class="line"><span style="color:#E1E4E8">        bOutHasUnmapped,</span></span>
+<span class="line"><span style="color:#E1E4E8">        bOutGuidsChanged,</span></span>
+<span class="line"><span style="color:#E1E4E8">        Parents,</span></span>
+<span class="line"><span style="color:#E1E4E8">        Cmds,</span></span>
+<span class="line"><span style="color:#E1E4E8">        NetSerializeLayouts,</span></span>
+<span class="line"><span style="color:#E1E4E8">        Object,</span></span>
+<span class="line"><span style="color:#E1E4E8">        OwningChannel->Connection-></span><span style="color:#B392F0">GetInTraceCollector</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">    };</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    FReceivePropertiesStackParams StackParams{</span></span>
+<span class="line"><span style="color:#B392F0">        FRepObjectDataBuffer</span><span style="color:#E1E4E8">(Data),</span></span>
+<span class="line"><span style="color:#B392F0">        FRepShadowDataBuffer</span><span style="color:#E1E4E8">(RepState->StaticBuffer.</span><span style="color:#B392F0">GetData</span><span style="color:#E1E4E8">()),</span></span>
+<span class="line"><span style="color:#F97583">        &#x26;</span><span style="color:#E1E4E8">RepState->GuidReferencesMap,</span></span>
+<span class="line"><span style="color:#79B8FF">        0</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#E1E4E8">        Cmds.</span><span style="color:#B392F0">Num</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">-</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#E1E4E8">        bEnableRepNotifies </span><span style="color:#F97583">?</span><span style="color:#F97583"> &#x26;</span><span style="color:#E1E4E8">RepState->RepNotifies </span><span style="color:#F97583">:</span><span style="color:#E1E4E8"> nullptr</span></span>
+<span class="line"><span style="color:#E1E4E8">    };</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    ReadPropertyHandle</span><span style="color:#E1E4E8">(Params);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">ReceiveProperties_r</span><span style="color:#E1E4E8">(Params, StackParams))</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#E1E4E8"> Params.ReadHandle </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这里的 terminator handle 也很重要。发送侧属性数据不是靠“固定长度结构体”结束的，而是按 handle 流读取，读到 <code>0</code> 表示这组属性结束。因此如果客户端和服务端的 RepLayout 不一致，或者某个属性 NetSerialize 写坏了，就可能出现 handle 读错、terminator 不对、连接被关闭等问题。</p>
+<h4 id="postnetreceive-和-onrep">PostNetReceive 和 OnRep</h4>
+<p>属性写入对象后，并不是马上调用 OnRep。<code>ProcessBunchInternal</code> 处理完这一整个 bunch 中的 content block 后，会对每个 replicator 调用 <code>PostReceivedBunch</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> FObjectReplicator::</span><span style="color:#B392F0">PostReceivedBunch</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> bool</span><span style="color:#E1E4E8"> bIsServer </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (OwningChannel->Connection->Driver->ServerConnection </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> nullptr);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">bIsServer </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> bHasReplicatedProperties)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        PostNetReceive</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        bHasReplicatedProperties </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    CallRepNotifies</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> FObjectReplicator::</span><span style="color:#B392F0">CallRepNotifies</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">bool</span><span style="color:#FFAB70"> bSkipIfChannelHasQueuedBunches</span><span style="color:#E1E4E8">) </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    FReceivingRepState</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> ReceivingRepState </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> RepState-></span><span style="color:#B392F0">GetReceivingRepState</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    RepLayout-></span><span style="color:#B392F0">CallRepNotifies</span><span style="color:#E1E4E8">(ReceivingRepState, Object);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">(Object))</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Object-></span><span style="color:#B392F0">PostRepNotifies</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>最终 <code>FRepLayout::CallRepNotifies</code> 会根据 <code>RepNotifies</code> 列表找到对应的 <code>RepNotifyFunc</code>，通过 <code>ProcessEvent</code> 调用。OnRep 可以没有参数，也可以带旧值参数；这些差异都在这里处理。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> FRepLayout::</span><span style="color:#B392F0">CallRepNotifies</span><span style="color:#E1E4E8">(FReceivingRepState</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> RepState</span><span style="color:#E1E4E8">, UObject</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Object</span><span style="color:#E1E4E8">) </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (FProperty</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> RepProperty : RepState->RepNotifies)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        UFunction</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> RepNotifyFunc </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Object-></span><span style="color:#B392F0">FindFunction</span><span style="color:#E1E4E8">(RepProperty->RepNotifyFunc);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        switch</span><span style="color:#E1E4E8"> (RepNotifyFunc->NumParms)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            case</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#E1E4E8">                Object-></span><span style="color:#B392F0">ProcessEvent</span><span style="color:#E1E4E8">(RepNotifyFunc, nullptr);</span></span>
+<span class="line"><span style="color:#F97583">                break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">            case</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#6A737D">                // 实际源码会根据属性类型准备旧值参数，这里只保留调用点</span></span>
+<span class="line"><span style="color:#6A737D">                // ...</span></span>
+<span class="line"><span style="color:#E1E4E8">                Object-></span><span style="color:#B392F0">ProcessEvent</span><span style="color:#E1E4E8">(RepNotifyFunc, PropertyData);</span></span>
+<span class="line"><span style="color:#F97583">                break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">            case</span><span style="color:#79B8FF"> 2</span><span style="color:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#6A737D">                // CustomDelta 可能带旧值和附加 metadata</span></span>
+<span class="line"><span style="color:#6A737D">                // ...</span></span>
+<span class="line"><span style="color:#E1E4E8">                Object-></span><span style="color:#B392F0">ProcessEvent</span><span style="color:#E1E4E8">(RepNotifyFunc, Parms);</span></span>
+<span class="line"><span style="color:#F97583">                break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    RepState->RepNotifies.</span><span style="color:#B392F0">Empty</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    RepState->RepNotifyMetaData.</span><span style="color:#B392F0">Empty</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h2 id="rpc路径">RPC路径</h2>
+<h3 id="发送端-1">发送端</h3>
+<h4 id="fieldheader-定位-ufunction">FieldHeader 定位 UFunction</h4>
+<p>RPC 的接收则从 <code>ReceivedBunch</code> 的 field payload 分支进入 <code>FObjectReplicator::ReceivedRPC</code>。它先用 field header 找到函数名，再在本地对象上找 <code>UFunction</code>，检查是不是网络函数，以及当前连接是否有权执行这个方向的 RPC。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">while</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">OwningChannel-></span><span style="color:#B392F0">ReadFieldHeaderAndPayload</span><span style="color:#E1E4E8">(Object, ClassCache, NetFieldExportGroup, Bunch, </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">FieldCache, Reader))</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Cast</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UFunction</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(FieldCache->Field.</span><span style="color:#B392F0">ToUObject</span><span style="color:#E1E4E8">()))</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        TSet</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FNetworkGUID</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> UnmappedGuids;</span></span>
+<span class="line"><span style="color:#F97583">        bool</span><span style="color:#E1E4E8"> bSkippedRpcExec </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">        ReceivedRPC</span><span style="color:#E1E4E8">(Reader, UnmappedGuids, bSkippedRpcExec, RepFlags, FieldCache, SkipRpcBehavior);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#E1E4E8"> FObjectReplicator::</span><span style="color:#B392F0">ReceivedRPC</span><span style="color:#E1E4E8">(FNetBitReader</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Reader</span><span style="color:#E1E4E8">, TSet</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FNetworkGUID</span><span style="color:#F97583">>&#x26;</span><span style="color:#FFAB70"> UnmappedGuids</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool&#x26;</span><span style="color:#FFAB70"> bOutSkippedRpcExec</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> FReplicationFlags</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> RepFlags</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#E1E4E8"> FFieldNetCache</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> FieldCache</span><span style="color:#E1E4E8">, ESkipRpcBehavior </span><span style="color:#FFAB70">SkipRpcBehavior</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    UObject</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Object </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetObject</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    FName FunctionName </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> FieldCache->Field.</span><span style="color:#B392F0">GetFName</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    UFunction</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Function </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Object-></span><span style="color:#B392F0">FindFunction</span><span style="color:#E1E4E8">(FunctionName);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> ((Function->FunctionFlags </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> FUNC_Net) </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        HANDLE_INCOMPATIBLE_RPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> ((Function->FunctionFlags </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> FUNC_NetServer) </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#F97583"> !</span><span style="color:#E1E4E8">bIsServer)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        HANDLE_INCOMPATIBLE_RPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> ((Function->FunctionFlags </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> (FUNC_NetClient </span><span style="color:#F97583">|</span><span style="color:#E1E4E8"> FUNC_NetMulticast)) </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> bIsServer)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        HANDLE_INCOMPATIBLE_RPC</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#F97583"> bool</span><span style="color:#E1E4E8"> bCanExecute </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Connection->Driver-></span><span style="color:#B392F0">ShouldCallRemoteFunction</span><span style="color:#E1E4E8">(Object, Function, RepFlags);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (bCanExecute)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Parms </span><span style="color:#F97583">=</span><span style="color:#B392F0"> new</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FMemStack::Get</span><span style="color:#E1E4E8">(), MEM_Zeroed, Function->ParmsSize) uint8;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        TSharedPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FRepLayout</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> FuncRepLayout </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Connection->Driver-></span><span style="color:#B392F0">GetFunctionRepLayout</span><span style="color:#E1E4E8">(LayoutFunction);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        FuncRepLayout-></span><span style="color:#B392F0">ReceivePropertiesForRPC</span><span style="color:#E1E4E8">(Object, LayoutFunction, OwningChannel, Reader, Parms, UnmappedGuids);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">bOutSkippedRpcExec)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#E1E4E8">            Connection->Driver-></span><span style="color:#B392F0">ForwardRemoteFunction</span><span style="color:#E1E4E8">(OwningActor, SubObject, Function, Parms);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">            if</span><span style="color:#E1E4E8"> (Connection->Driver-></span><span style="color:#B392F0">IsExecuteRPCFunctionsEnabled</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">            {</span></span>
+<span class="line"><span style="color:#B392F0">                CallProcessEventForReceivedRPC</span><span style="color:#E1E4E8">(Object, Function, Parms);</span></span>
+<span class="line"><span style="color:#E1E4E8">            }</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h4 id="rpc-参数还原并-processevent">RPC 参数还原并 ProcessEvent</h4>
+<p><code>ReceivePropertiesForRPC</code> 和发送侧的 <code>SendPropertiesForRPC</code> 对应。发送侧按函数参数布局写，接收侧按同一个函数参数布局读，最后把参数内存交给 <code>ProcessEvent</code>。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#E1E4E8"> FRepLayout::</span><span style="color:#B392F0">ReceivePropertiesForRPC</span><span style="color:#E1E4E8">(UObject</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Object</span><span style="color:#E1E4E8">, UFunction</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Function</span><span style="color:#E1E4E8">, UActorChannel</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> Channel</span><span style="color:#E1E4E8">, FNetBitReader</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Reader</span><span style="color:#E1E4E8">, FRepObjectDataBuffer </span><span style="color:#FFAB70">Data</span><span style="color:#E1E4E8">, TSet</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FNetworkGUID</span><span style="color:#F97583">>&#x26;</span><span style="color:#FFAB70"> UnmappedGuids</span><span style="color:#E1E4E8">) </span><span style="color:#F97583">const</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (int32 i </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">; i </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> Parents.</span><span style="color:#B392F0">Num</span><span style="color:#E1E4E8">(); i</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (CastField</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FBoolProperty</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(</span><span style="color:#FFAB70">Parents</span><span style="color:#E1E4E8">[i].Property) </span><span style="color:#F97583">||</span><span style="color:#E1E4E8"> Reader.</span><span style="color:#B392F0">ReadBit</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            bool</span><span style="color:#E1E4E8"> bHasUnmapped </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">            SerializeProperties_r</span><span style="color:#E1E4E8">(Reader, Reader.PackageMap, </span><span style="color:#FFAB70">Parents</span><span style="color:#E1E4E8">[i].CmdStart, </span><span style="color:#FFAB70">Parents</span><span style="color:#E1E4E8">[i].CmdEnd, Data, bHasUnmapped, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">, Empty, Collector, Object);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Reader.PackageMap-></span><span style="color:#B392F0">GetTrackedUnmappedGuids</span><span style="color:#E1E4E8">().</span><span style="color:#B392F0">Num</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        UnmappedGuids </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Reader.PackageMap-></span><span style="color:#B392F0">GetTrackedUnmappedGuids</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h2 id="总结">总结</h2>
+<p>两者都走 ActorChannel 和 content block。属性复制是在修正对象状态，允许合并、跳过中间态、依赖后续更新追赶；RPC 是一次函数调用，尤其 reliable RPC 会被 channel 可靠队列约束，目标是让这次调用按规则到达并执行。</p>
+<p>因此写 Gameplay 逻辑时，不应该把“属性最终会同步”和“RPC 一定按某个属性更新前后执行”混在一起假设。同一个 packet 中谁先处理，取决于 bunch/content block/field 在流里的顺序。</p> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-06/UE资产管理笔记上：资产，加载及数据表.html"> <span>← NEWER</span> <strong>UE资产管理笔记上：资产，加载及数据表</strong> </a> <a class="article-pagination-next" href="../../posts/2026-05/GAS设计解析四：GA与GameplayTag.html"> <span>OLDER →</span> <strong>GAS设计解析四：GA与GameplayTag</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-08/联机游戏开发指南笔记（二）.html">联机游戏开发指南笔记（二）</a><a href="../../posts/2026-07/联机游戏开发指南笔记（一）.html">联机游戏开发指南笔记（一）</a><a href="../../posts/2026-05/UE网络笔记二：DS和客户端连接.html">UE网络笔记二：DS和客户端连接</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#属性复制的注册与布局"> 属性复制的注册与布局 </a><a class="article-toc-link depth-3" href="#注册写法"> 注册写法 </a><a class="article-toc-link depth-3" href="#freplayout"> FRepLayOut </a><a class="article-toc-link depth-3" href="#属性同步"> 属性同步 </a><a class="article-toc-link depth-3" href="#发送端"> 发送端 </a><a class="article-toc-link depth-3" href="#接收端"> 接收端 </a><a class="article-toc-link depth-2" href="#rpc路径"> RPC路径 </a><a class="article-toc-link depth-3" href="#发送端-1"> 发送端 </a><a class="article-toc-link depth-2" href="#总结"> 总结 </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>

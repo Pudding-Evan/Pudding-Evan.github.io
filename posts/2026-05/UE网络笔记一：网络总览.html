@@ -1,0 +1,725 @@
+<!DOCTYPE html><html lang="zh-CN" data-style="minimal"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="网络内容总览"><meta name="author" content="Evan"><meta name="theme-color" content="#f7f6ef"><link rel="canonical" href="https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%80%EF%BC%9A%E7%BD%91%E7%BB%9C%E6%80%BB%E8%A7%88.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="Elysium RSS" href="../../rss.xml"><meta property="og:site_name" content="Elysium"><meta property="og:type" content="article"><meta property="og:title" content="UE网络笔记一：网络总览 | Elysium"><meta property="og:description" content="网络内容总览"><meta property="og:url" content="https://pudding-evan.github.io/posts/2026-05/UE%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0%E4%B8%80%EF%BC%9A%E7%BD%91%E7%BB%9C%E6%80%BB%E8%A7%88.html"><meta property="og:image" content="https://pudding-evan.github.io/assets/background.jpg"><meta name="twitter:card" content="summary_large_image"><meta property="article:published_time" content="2026-05-22"><meta property="article:tag" content="Net"><title>UE网络笔记一：网络总览 | Elysium</title><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../interface.css"><script src="../../site.js" defer></script></head> <body class="plain-content-page"> <header class="site-header"> <nav class="nav site-shell" aria-label="主导航"> <a class="brand-reveal" href="../../index.html" aria-label="Elysium 首页"> <span class="brand-initial" aria-hidden="true">E</span> <span class="brand-rest" aria-hidden="true">LYSIUM</span> </a> <div class="nav-controls"> <div class="nav-links"> <a href="../../articles.html" aria-current="page">NOTE</a> <a href="../../videos.html">VIDEO</a> </div> </div> </nav> </header>  <main class="article-page site-shell"> <a class="text-link article-back" href="../../articles.html">BACK TO ARTICLES</a> <div class="article-shell"> <article class="article"> <div class="meta"> <a class="meta-tag" href="../../articles.html?tag=net">Net</a> <span>2026.05.22</span>  <span>14 MIN READ</span> </div> <h1 id="ue网络笔记一网络总览">UE网络笔记一：网络总览</h1>
+<p>这篇笔记内容并不会过多涉及到实际工程中的用法，也不会提到UE最新的网络复制系统Iris，更多希望解析以Replicate和RPC的为模型的UE网络概览，理清数据处理和流向。</p>
+<h2 id="前置知识">前置知识</h2>
+<p>一个程序如果想和另一台机器上的程序通信，就需要通过Socekt进行发送和接收数据。网络通信一般解决三个问题：发给哪个机器、发给哪个程序，用什么方式发。Socket就是程序进行收发数据的通信端点，常见的TCP和UDP，就是通过Socket使用的。UE最底层使用的UDP，作为传输层协议，它的通信方式更像是，把数据往对应IP地址的端口一塞，它的核心特征是无连接、不保证送达，不保证顺序，也不自动重传，换来的是其开销和延迟的便利。UE会在这个基础上构建自己所需的可靠协议。关于TCP和UDP的内容，上过网络课的应该都比较了解，不再赘述了。</p>
+<p>如果游戏引擎给予UDP做网络同步，势必要在这此基础上封装一层自己的机制，例如、加上数据包序号、给某些需要保证到达的消息增加确认机制、对丢包内容选择性重发、控制发包频率、包括在网络波动的情况下调整发送的策略，决定同步的对象等等。因为UDP只是一个很快的传输层工具，需要补全大量面对游戏场景的机制。</p>
+<h2 id="概念说明">概念说明</h2>
+<p>UE网络运行的中心类可以分两条线理解。</p>
+<p><img  src="/_astro/image.CGMlR72T_Z1cGvkW.webp" alt="image" loading="lazy" decoding="async" width="975" height="465"></p>
+<h3 id="netdriver"><code>NetDriver</code></h3>
+<p><code>UWorld</code>是游戏世界的顶层运行容器了，无论是服务器还是客户端，都有自己的world。从网络的角度看，地图里的<code>Actor</code>/<code>Level</code>/<code>GameMode</code>/<code>GameState</code>等等，则是需要进行同步的对象，因此<code>UWorld</code>可以认为是提供网络复制发生的上下文。而<code>NetDriver</code>就绑定在<code>World</code>中。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#E1E4E8">bool </span><span style="color:#B392F0">UWorld</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">Listen</span><span style="color:#E1E4E8">( </span><span style="color:#79B8FF">FURL</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> InURL )</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	...</span></span>
+<span class="line"><span style="color:#6A737D">	// Create net Driver</span></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (GEngine</span><span style="color:#F97583">-></span><span style="color:#B392F0">CreateNamedNetDriver</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, NAME_GameNetDriver, NAME_GameNetDriver))</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#E1E4E8">		NetDriver </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> GEngine</span><span style="color:#F97583">-></span><span style="color:#B392F0">FindNamedNetDriver</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, NAME_GameNetDriver);</span></span>
+<span class="line"><span style="color:#E1E4E8">		NetDriver</span><span style="color:#F97583">-></span><span style="color:#B392F0">SetWorld</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#6A737D">		// ...</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"><span style="color:#6A737D">	// ...</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p><code>NetDriver</code>是挂在 <code>World</code> 网络上下文下的网络驱动器。</p>
+<p>它负责驱动网络信息的收发、管理连接、管理Actor复制的调度、以及维护网络相关的状态。</p>
+<p>在服务器视角下，服务器上的<code>NetDriver</code>会管理多个客户端连接，它维护了一组<code>ClientConnection</code></p>
+<p>在客户端视角下，客户端上的NetDriver则管理到服务器的连接。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#6A737D">	/** Array of connections to clients (this net driver is a host) - unsorted, and ordering changes depending on actor replication */</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">	TArray</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">TObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UNetConnection</span><span style="color:#F97583">>></span><span style="color:#E1E4E8"> ClientConnections;</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#6A737D">	/** Connection to the server (this net driver is a client) */</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">	TObjectPtr</span><span style="color:#F97583">&#x3C;class</span><span style="color:#B392F0"> UNetConnection</span><span style="color:#E1E4E8">> </span><span style="color:#B392F0">ServerConnection</span><span style="color:#E1E4E8">;</span></span></code></pre>
+<h3 id="netconnection"><code>NetConnection</code></h3>
+<p><code>NetConnection</code>的生命周期主要由<code>NetDriver</code>和连接状态主导。</p>
+<p>简单来说</p>
+<ul>
+<li>服务器端，每个远端客户端连接进来时，<code>Server NetDriver</code> 创建一个 <code>ClientConnection</code>。</li>
+<li>客户端端，主动连接服务器时，<code>Client NetDriver</code> 创建一个 <code>ServerConnection</code>。</li>
+<li><code>Connection</code> 创建之后先通过 <code>ControlChannel</code> 完成握手和登录流程；登录成功后，服务器才创建对应的 <code>PlayerController</code>，并将 <code>PlayerController</code> 与该 <code>Connection</code> 绑定。</li>
+</ul>
+<p><code>NetConnection</code>管理连接基本的事情。例如Packet收发、ACK/丢包/重传、可靠/不可靠数据处理、Channel集合等。</p>
+<h3 id="channel"><code>Channel</code></h3>
+<p><code>Channel</code>应该理解为建立<code>NetConnection</code>上的逻辑数据通道。既然已经建立了一条网络连接，其收发到的数据应该被处理并发送给其他消费数据的对象方，而承载这些分发数据流的载体就是<code>Channel</code>。</p>
+<p>常见的Channel包含：</p>
+<ul>
+<li><code>ControlChannel</code>：连接控制、登录、握手、Travel 等</li>
+<li><code>ActorChannel</code>：Actor 复制、RPC、Actor 创建销毁</li>
+<li><code>VoiceChannel</code>：语音</li>
+</ul>
+<p>其生命周期有NetConnection和具体网络业务决定，连接存在期间，会按需打开Channel、业务结束或者连接关闭时，则会关闭Channel。</p>
+<p>这里再额外解释一下**<code>ActorChannel</code>** , 这是最常见和最重要的Channel类型。服务器要把某个 Actor 同步给某个客户端时，通常会在该客户端的 <code>NetConnection</code> 上创建或复用对应的 <code>ActorChannel</code>。</p>
+<p><code>ActorChannel</code>一定是某个<code>Connection</code>针对某个Actor的专用通道。举个可能的例子</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">服务器上有 Actor_A。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">Client_1 能看到 Actor_A：</span></span>
+<span class="line"><span style="color:#E1E4E8">    ServerConnection_1 上有 Actor_A 对应的 ActorChannel。</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">Client_2 也能看到 Actor_A：</span></span>
+<span class="line"><span style="color:#E1E4E8">    ServerConnection_2 上也有 Actor_A 对应的 ActorChannel。</span></span></code></pre>
+<p>也就是说，一个服务器 Actor 可以对应多个 <code>ActorChannel</code>。每个 <code>ActorChannel</code> 属于不同的 <code>Connection</code>。</p>
+<h3 id="localplayerserverconnection"><code>LocalPlayer/ServerConnection</code></h3>
+<p>见上图，为什么这里要单独拿出来提这两个呢，因为这里是一个比较容易混淆的地方。</p>
+<p><code>UPlayer</code> 是一个玩家来源抽象。它的子类包含ULocalPlayer、UNetConnection。</p>
+<p><code>APlayerController</code> 中有 <code>Player</code> 概念，表示这个控制器的玩家来源，见源码</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#6A737D">	/** UPlayer associated with this PlayerController.  </span></span>
+<span class="line"><span style="color:#6A737D">		Could be a local player or a net connection. */</span></span>
+<span class="line"><span style="color:#B392F0">	UPROPERTY</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">	TObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UPlayer</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Player;</span></span></code></pre>
+<ul>
+<li>对于客户端本地玩家通常是</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">PlayerController->Player </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> LocalPlayer</span></span></code></pre>
+<p><code>ULocalPlayer</code> 是本地玩家对象，表示当前进程中的一个本地玩家输入源和视口。</p>
+<p>它不是网络连接，也不是服务器上的远端玩家对象。</p>
+<ul>
+<li>而对于服务器的远端玩家则通常是</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#E1E4E8">PlayerController->Player </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> NetConnection</span></span></code></pre>
+<p><code>UNetConnection</code> 一方面是网络连接对象，另一方面在服务器远端玩家场景下，又可以作为 <code>PlayerController</code> 的 <code>Player</code> 来源。</p>
+<h2 id="数据收包流程">数据收包流程</h2>
+<p>一条完整的收包主线如下，如果调试过RPC函数，这个堆栈应该会非常熟悉，接下来这一节内容会结合源码，拆解收包流程。</p>
+<p>![image 1](./images/image 1.png)</p>
+<h3 id="uipnetdrivertickdispatch"><code>UIpNetDriver::TickDispatch</code></h3>
+<p>IpNetDriver作为NetDriver的子类，是实际业务的承载者。<code>UIpNetDriver::TickDispatch</code> 是传统 UDP 路径的每帧收包入口</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#B392F0">UWorld</span><span style="color:#E1E4E8">::Tick</span></span>
+<span class="line"><span style="color:#F97583">  -></span><span style="color:#E1E4E8"> BroadcastTickDispatch</span></span>
+<span class="line"><span style="color:#F97583">    -></span><span style="color:#B392F0"> UNetDriver</span><span style="color:#E1E4E8">::TickDispatch</span></span>
+<span class="line"><span style="color:#F97583">      -></span><span style="color:#B392F0"> UIpNetDriver</span><span style="color:#E1E4E8">::TickDispatch</span></span></code></pre>
+<p>它最核心的职责是从socket或者接受队列中取packet，然后按地址找到连接。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UIpNetDriver</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">TickDispatch</span><span style="color:#E1E4E8">(float DeltaTime)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">	Super</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">TickDispatch</span><span style="color:#E1E4E8">(DeltaTime);</span></span>
+<span class="line"><span style="color:#6A737D">	// ...</span></span>
+<span class="line"><span style="color:#F97583">	for</span><span style="color:#E1E4E8">(FPacketIterator </span><span style="color:#B392F0">It</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">); It ; </span><span style="color:#F97583">++</span><span style="color:#E1E4E8">It)</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#E1E4E8">      FReceivedPacketView ReceivedPacket;</span></span>
+<span class="line"><span style="color:#E1E4E8">      bool bOk </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> It.</span><span style="color:#B392F0">GetCurrentPacket</span><span style="color:#E1E4E8">(ReceivedPacket); </span><span style="color:#6A737D">// 取Packet</span></span>
+<span class="line"><span style="color:#E1E4E8">      TSharedRef</span><span style="color:#F97583">&#x3C;const</span><span style="color:#79B8FF"> FInternetAddr</span><span style="color:#E1E4E8">> FromAddr </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ReceivedPacket.Address.</span><span style="color:#B392F0">ToSharedRef</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">      UNetConnection</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Connection </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> nullptr;</span></span>
+<span class="line"><span style="color:#E1E4E8">      UIpConnection</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> MyServerConnection </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetServerConnection</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">      </span></span>
+<span class="line"><span style="color:#6A737D">      // ...</span></span>
+<span class="line"><span style="color:#E1E4E8">      </span></span>
+<span class="line"><span style="color:#6A737D">      // 客户端: 找到服务器的Connection</span></span>
+<span class="line"><span style="color:#F97583">	    if</span><span style="color:#E1E4E8">(MyServerConnection)</span></span>
+<span class="line"><span style="color:#E1E4E8">	    {</span></span>
+<span class="line"><span style="color:#F97583">          if</span><span style="color:#E1E4E8"> (MyServerConnection</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">RemoteAddr</span><span style="color:#F97583">-></span><span style="color:#B392F0">CompareEndpoints</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">FromAddr))</span></span>
+<span class="line"><span style="color:#E1E4E8">          {</span></span>
+<span class="line"><span style="color:#E1E4E8">              Connection </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> MyServerConnection;</span></span>
+<span class="line"><span style="color:#E1E4E8">          }</span></span>
+<span class="line"><span style="color:#E1E4E8">	    }</span></span>
+<span class="line"><span style="color:#E1E4E8">	    </span></span>
+<span class="line"><span style="color:#6A737D">	    // 服务器：从Packet地址匹配ClientConnection,找到对应的客户端Connection</span></span>
+<span class="line"><span style="color:#F97583">      if</span><span style="color:#E1E4E8"> (Connection </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> nullptr)</span></span>
+<span class="line"><span style="color:#E1E4E8">      {</span></span>
+<span class="line"><span style="color:#F97583">					if</span><span style="color:#E1E4E8"> (TObjectPtr</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">UNetConnection</span><span style="color:#F97583">>*</span><span style="color:#E1E4E8"> ConnectionMapValue </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> MappedClientConnections.</span><span style="color:#B392F0">Find</span><span style="color:#E1E4E8">(FromAddr))</span></span>
+<span class="line"><span style="color:#E1E4E8">          {</span></span>
+<span class="line"><span style="color:#E1E4E8">             Connection </span><span style="color:#F97583">=</span><span style="color:#F97583"> *</span><span style="color:#E1E4E8">ConnectionMapValue;</span></span>
+<span class="line"><span style="color:#E1E4E8">          }</span></span>
+<span class="line"><span style="color:#E1E4E8">      }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">      if</span><span style="color:#E1E4E8"> (Connection </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> nullptr)</span></span>
+<span class="line"><span style="color:#E1E4E8">      {</span></span>
+<span class="line"><span style="color:#6A737D">	       // 处理未关联NetConnection的数据包，执行握手重建connection或者是映射</span></span>
+<span class="line"><span style="color:#E1E4E8">          Connection </span><span style="color:#F97583">=</span><span style="color:#B392F0"> ProcessConnectionlessPacket</span><span style="color:#E1E4E8">(ReceivedPacket, It.</span><span style="color:#B392F0">GetWorkingBuffer</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">      }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">      if</span><span style="color:#E1E4E8"> (Connection </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> nullptr </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> ReceivedPacket.DataView.</span><span style="color:#B392F0">NumBytes</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">      {</span></span>
+<span class="line"><span style="color:#E1E4E8">          Connection</span><span style="color:#F97583">-></span><span style="color:#B392F0">ReceivedRawPacket</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">              (uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">)ReceivedPacket.DataView.</span><span style="color:#B392F0">GetData</span><span style="color:#E1E4E8">(),</span></span>
+<span class="line"><span style="color:#E1E4E8">              ReceivedPacket.DataView.</span><span style="color:#B392F0">NumBytes</span><span style="color:#E1E4E8">());</span></span>
+<span class="line"><span style="color:#E1E4E8">      }</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span></code></pre>
+<p>简单来说，NetDriver</p>
+<ul>
+<li>客户端通常只有 <code>ServerConnection</code>，只接受远端地址匹配服务器的 packet。</li>
+<li>服务器通过 <code>MappedClientConnections</code> 按来源地址找到某个客户端连接。</li>
+<li>找不到连接时才会进入 <code>ProcessConnectionlessPacket</code>，处理握手、challenge、无连接控制包。</li>
+<li>只有拿到 <code>UNetConnection</code>，普通 packet 才进入 <code>ReceivedRawPacket</code>。</li>
+</ul>
+<h3 id="unetconnectionreceivedrawpacket"><code>UNetConnection::ReceivedRawPacket</code></h3>
+<p>Connection在这里对原始数据进行一些处理，主要交给PacketHandle进行处理，负责对握手、加密校验等等、Handel这里有可能直接消费掉这个包数据，不再往下传了。它处理完毕后的数据会进入到ReceivePacket进行下一步处理</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UNetConnection</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ReceivedRawPacket</span><span style="color:#E1E4E8">( </span><span style="color:#F97583">void*</span><span style="color:#FFAB70"> InData</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">int32</span><span style="color:#FFAB70"> Count</span><span style="color:#E1E4E8"> )</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">	 // ...</span></span>
+<span class="line"><span style="color:#E1E4E8">    uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Data </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">)InData;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Handler.</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        FReceivedPacketView PacketView;</span></span>
+<span class="line"><span style="color:#E1E4E8">        PacketView.DataView </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> { Data, Count, </span><span style="color:#B392F0">ECountUnits</span><span style="color:#E1E4E8">::Bytes };</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">				// 进入Handler的处理链路</span></span>
+<span class="line"><span style="color:#E1E4E8">        EIncomingResult Result </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Handler-></span><span style="color:#B392F0">Incoming</span><span style="color:#E1E4E8">(PacketView);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">				// 如果处理后依然有数据的话，继续下发</span></span>
+<span class="line"><span style="color:#E1E4E8">        Count </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PacketView.DataView.</span><span style="color:#B392F0">NumBytes</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        </span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (Count </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            return</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">        </span></span>
+<span class="line"><span style="color:#E1E4E8">        Data </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PacketView.DataView.</span><span style="color:#B392F0">GetMutableData</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    FBitReader </span><span style="color:#B392F0">Reader</span><span style="color:#E1E4E8">(Data, Count </span><span style="color:#F97583">*</span><span style="color:#79B8FF"> 8</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#B392F0">    ReceivedPacket</span><span style="color:#E1E4E8">(Reader, </span><span style="color:#79B8FF">false</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h3 id="receivedpacketreceivedpacket"><strong><code>ReceivedPacket::ReceivedPacket</code></strong></h3>
+<p>这一层接手的数据通过了Raw层处理，可以按UE网络协议进行解析了。</p>
+<ol>
+<li>它会解析当前收到的<code>PacketHander</code>，更新本端接受侧的<code>InPacketId</code>，包括一些丢包统计和顺序状态。</li>
+<li>然后处理<code>ACK/NAK</code>的逻辑。这里的 <code>ACK / NAK</code> 指向的是本端之前发出去的 packet，因此会触发 <code>ReceivedAck</code> / <code>ReceivedNak</code>，进而更新本端的可靠性状态</li>
+<li>之后，才是调用<code>DispatchPacket</code> ，把<code>Packet</code>中剩余的数据继续下发处理</li>
+<li>最后，还会根据处理结果，记录对当前<code>Packet</code>的接受结果，等待之后发送给对端</li>
+</ol>
+<h3 id="receivedpacketdispatchpacket"><strong><code>ReceivedPacket::DispatchPacket</code></strong></h3>
+<p><code>DispatchPacket</code>会开始处理Packet中的Channel数据，一个Packet可以包含多个Bunch。</p>
+<p>简单来说</p>
+<ol>
+<li>从数据流中读出 bunch header 和 payload，构建<code>FInBunch</code></li>
+<li>通过 <code>ChIndex / ChName</code> 找到或创建 channel</li>
+<li>把 <code>FInBunch</code> 交给 <code>Channel->ReceivedRawBunch</code></li>
+</ol>
+<p>这里依然不会取解释Actor的属性或者是执行RPC，具体的语义依然要由Channel自身来决定</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UNetConnection</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">DispatchPacket</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#B392F0">    FBitReader</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Reader</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#B392F0">    int32</span><span style="color:#FFAB70"> PacketId</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    bool&#x26;</span><span style="color:#FFAB70"> bOutSkipAck</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">    bool&#x26;</span><span style="color:#FFAB70"> bOutHasBunchErrors</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">		// ...</span></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">Reader.</span><span style="color:#B392F0">AtEnd</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#B392F0"> GetConnectionState</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> USOCK_Closed)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#6A737D">	    // 构建InBunch</span></span>
+<span class="line"><span style="color:#E1E4E8">        FInBunch </span><span style="color:#B392F0">Bunch</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">        uint8 bControl </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Reader.</span><span style="color:#B392F0">ReadBit</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch.PacketId </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PacketId;</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch.bOpen </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> bControl </span><span style="color:#F97583">?</span><span style="color:#E1E4E8"> Reader.</span><span style="color:#B392F0">ReadBit</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">:</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch.bClose </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> bControl </span><span style="color:#F97583">?</span><span style="color:#E1E4E8"> Reader.</span><span style="color:#B392F0">ReadBit</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">:</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch.bReliable </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Reader.</span><span style="color:#B392F0">ReadBit</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        uint32 ChIndex </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        Reader.</span><span style="color:#B392F0">SerializeIntPacked</span><span style="color:#E1E4E8">(ChIndex);</span></span>
+<span class="line"><span style="color:#6A737D">				// ...</span></span>
+<span class="line"><span style="color:#E1E4E8">        UChannel</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Channel </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Channels[Bunch.ChIndex];</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">				// 从 Packet里取出当前Bunch的payload,挂给FInBunch</span></span>
+<span class="line"><span style="color:#E1E4E8">        int32 BunchDataBits </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Reader.</span><span style="color:#B392F0">ReadInt</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">UNetConnection</span><span style="color:#E1E4E8">::MaxPacket </span><span style="color:#F97583">*</span><span style="color:#79B8FF"> 8</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch.</span><span style="color:#B392F0">ResetData</span><span style="color:#E1E4E8">(Reader, BunchDataBits, </span><span style="color:#B392F0">AlignTo32Bits</span><span style="color:#E1E4E8">(BunchDataBits));</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">				// ..</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (Channel </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> nullptr</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#6A737D">	        //..</span></span>
+<span class="line"><span style="color:#6A737D">	        // 如果没有找到能够处理的Bunch的Channel，在这里创建出来</span></span>
+<span class="line"><span style="color:#E1E4E8">            Channel </span><span style="color:#F97583">=</span><span style="color:#B392F0"> CreateChannelByName</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">                Bunch.ChName,</span></span>
+<span class="line"><span style="color:#B392F0">                EChannelCreateFlags</span><span style="color:#E1E4E8">::None,</span></span>
+<span class="line"><span style="color:#E1E4E8">                Bunch.ChIndex);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">				// 发给Channel处理Bunch</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (Channel)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#E1E4E8">            Channel-></span><span style="color:#B392F0">ReceivedRawBunch</span><span style="color:#E1E4E8">(Bunch, bLocalSkipAck);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h3 id="uchannalreceivedrawbunch"><code>UChannal::ReceivedRawBunch</code></h3>
+<p>packet 层顺序和 channel 层 reliable 顺序是两套东西。<code>ReceivedPacket</code> 处理 packet id；<code>ReceivedRawBunch</code> 会对接受的Bunch进行一些顺序处理。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UChannel</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ReceivedRawBunch</span><span style="color:#E1E4E8">(FInBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> Bunch, bool</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> bOutSkipAck)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Bunch.bHasPackageMapExports)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        PackageMap</span><span style="color:#F97583">-></span><span style="color:#B392F0">ReceiveNetGUIDBunch</span><span style="color:#E1E4E8">(Bunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Bunch.bReliable </span><span style="color:#F97583">&#x26;&#x26;</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch.ChSequence </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> Connection</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">InReliable[ChIndex] </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">	    </span></span>
+<span class="line"><span style="color:#6A737D">		    // 找到该Bunch应该插入的等待链表位置，把Bunch塞进去</span></span>
+<span class="line"><span style="color:#E1E4E8">	      FInBunch</span><span style="color:#F97583">**</span><span style="color:#E1E4E8"> InPtr;</span></span>
+<span class="line"><span style="color:#F97583">				for</span><span style="color:#E1E4E8">( InPtr</span><span style="color:#F97583">=&#x26;</span><span style="color:#E1E4E8">InRec; </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">InPtr; InPtr</span><span style="color:#F97583">=&#x26;</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">InPtr)</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">Next )</span></span>
+<span class="line"><span style="color:#E1E4E8">				{</span></span>
+<span class="line"><span style="color:#F97583">						if</span><span style="color:#E1E4E8">( Bunch.ChSequence</span><span style="color:#F97583">==</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">InPtr)</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ChSequence )</span></span>
+<span class="line"><span style="color:#E1E4E8">						{</span></span>
+<span class="line"><span style="color:#6A737D">							// Already queued.</span></span>
+<span class="line"><span style="color:#F97583">							return</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">						}</span></span>
+<span class="line"><span style="color:#F97583">						else</span><span style="color:#F97583"> if</span><span style="color:#E1E4E8">( Bunch.ChSequence</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">InPtr)</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ChSequence )</span></span>
+<span class="line"><span style="color:#E1E4E8">						{</span></span>
+<span class="line"><span style="color:#6A737D">							// Stick before this one.</span></span>
+<span class="line"><span style="color:#F97583">							break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">						}</span></span>
+<span class="line"><span style="color:#E1E4E8">				}</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#E1E4E8">				FInBunch</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> New </span><span style="color:#F97583">=</span><span style="color:#F97583"> new</span><span style="color:#B392F0"> FInBunch</span><span style="color:#E1E4E8">(Bunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">				New</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">Next     </span><span style="color:#F97583">=</span><span style="color:#F97583"> *</span><span style="color:#E1E4E8">InPtr;</span></span>
+<span class="line"><span style="color:#F97583">				*</span><span style="color:#E1E4E8">InPtr        </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> New;</span></span>
+<span class="line"><span style="color:#E1E4E8">				NumInRec</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">				</span></span>
+<span class="line"><span style="color:#E1E4E8">				</span></span>
+<span class="line"><span style="color:#6A737D">				// ...</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    else</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#6A737D">			    // bDeleted意味着处理这个Bunch的过程中，当前Channel被关闭或者清理</span></span>
+<span class="line"><span style="color:#6A737D">				  // 所以如果bDeleted为真,应该返回避免操作此Channel</span></span>
+<span class="line"><span style="color:#E1E4E8">					bool bDeleted </span><span style="color:#F97583">=</span><span style="color:#B392F0"> ReceivedNextBunch</span><span style="color:#E1E4E8">( Bunch, bOutSkipAck );</span></span>
+<span class="line"><span style="color:#E1E4E8">			</span></span>
+<span class="line"><span style="color:#F97583">					if</span><span style="color:#E1E4E8"> (bDeleted)</span></span>
+<span class="line"><span style="color:#E1E4E8">					{</span></span>
+<span class="line"><span style="color:#F97583">						return</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">					}</span></span>
+<span class="line"><span style="color:#E1E4E8">						</span></span>
+<span class="line"><span style="color:#F97583">			    while</span><span style="color:#E1E4E8"> (InRec)</span></span>
+<span class="line"><span style="color:#E1E4E8">			    {</span></span>
+<span class="line"><span style="color:#F97583">				    if</span><span style="color:#E1E4E8">(InRec</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ChSequence </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> Connection</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">InReliable[ChIndex] </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#F97583">					    break</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">					    </span></span>
+<span class="line"><span style="color:#E1E4E8">			        FInBunch</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Release </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> InRec;</span></span>
+<span class="line"><span style="color:#E1E4E8">			        InRec </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> InRec</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">Next;</span></span>
+<span class="line"><span style="color:#E1E4E8">			        NumInRec</span><span style="color:#F97583">--</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">			        Release</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">Next </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> nullptr;</span></span>
+<span class="line"><span style="color:#E1E4E8">			</span></span>
+<span class="line"><span style="color:#E1E4E8">			        bDeleted </span><span style="color:#F97583">=</span><span style="color:#B392F0"> ReceivedNextBunch</span><span style="color:#E1E4E8">( </span><span style="color:#F97583">*</span><span style="color:#E1E4E8">Release, bLocalSkipAck );</span></span>
+<span class="line"><span style="color:#6A737D">			        // ...</span></span>
+<span class="line"><span style="color:#E1E4E8">			        </span></span>
+<span class="line"><span style="color:#F97583">			        delete</span><span style="color:#E1E4E8"> Release;</span></span>
+<span class="line"><span style="color:#E1E4E8">			    }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<ul>
+<li>这段逻辑的核心操作在于，Reliable Bunch 必须按 Channel 内的可靠序号严格顺序处理；非 Reliable Bunch 可以直接处理。如果当前接受到的Reliable Bunch乱序，会插入到<code>InRec</code>中 。<code>InRec</code>本质是已经收到，但暂时不能处理的Reliable Bunch队列。它缓存乱序到达的Reliable Bunch，等缺失的Reliable Bunch到达后，再按顺序释放处理。</li>
+<li>另一个问题是：什么情况下Bunch会被标记为Reliable呢？简单来说，网络层要求必须到达，且按顺序处理的Channel数据包，都会被标记为Reliable Bunch。例如Reliable的RPC，除此之外，像是连接握手、加载地图、NetGUID等控制信息、一些可靠传输的ActorChannel数据，都有可能通过Reliable Bunch发送，所以说，Reliable RPC 是 Reliable Bunch 的典型来源，但 Reliable Bunch 不只来自 RPC。</li>
+</ul>
+<h3 id="uchannelreceivednextbunch"><code>UChannel::ReceivedNextBunch</code></h3>
+<p>简单来说，<strong><code>ReceivedNextBunch</code></strong> 会处理Partical Bunch的拼接，拼接完整后再交给具体的Channel。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> UChannel</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ReceivedNextBunch</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FInBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">bool&#x26;</span><span style="color:#FFAB70"> bOutSkipAck</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#6A737D">    // 1. 可靠 Bunch：更新本通道收到的可靠序号</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Bunch.bReliable)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        check</span><span style="color:#E1E4E8">(Bunch.ChSequence </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> Connection->InReliable[Bunch.ChIndex] </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">        Connection->InReliable[Bunch.ChIndex] </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch.ChSequence;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#E1E4E8">		FInBunch</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> HandleBunch </span><span style="color:#F97583">=</span><span style="color:#F97583"> &#x26;</span><span style="color:#E1E4E8">Bunch;</span></span>
+<span class="line"><span style="color:#6A737D">    // 2. 如果是分片 Bunch，需要先重组</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Bunch.bPartial)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#6A737D">	    // 分片重做逻辑...</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#6A737D">    // 通道打开等校验状态...</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#6A737D">    // 最终交给真正的有序 Bunch 处理逻辑</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#B392F0"> ReceivedSequencedBunch</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">HandleBunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Bunch可以理解为Channel上的一段逻辑消息，一个逻辑消息可能太大，超过单次发送的允许或者是单个Bunch的大小限制，所以有时候一个大的Bunch会被拆成多个partial bunch进行发送，这也是为什么在接收端这里需把这些片段再拼接起来。而到了**<code>ReceivedSequencedBunch</code>**  这一层，它拿到的则是按顺序重组的完整Bunch，进行真正的处理逻辑。</p>
+<h3 id="uchannelreceivedsequencedbunch"><strong><code>UChannel::ReceivedSequencedBunch</code></strong></h3>
+<p><code>ReceivedSequencedBunch</code> 的主线非常短</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">bool</span><span style="color:#B392F0"> UChannel</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ReceivedSequencedBunch</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">FInBunch</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> Bunch</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">Closing)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        ReceivedBunch</span><span style="color:#E1E4E8">(Bunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Bunch.bClose)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        ConditionalCleanUp</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">false</span><span style="color:#E1E4E8">, Bunch.CloseReason);</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#79B8FF"> false</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>ReceivedBunch是一个虚函数，不同的Channel在这里处理各自的业务语义。例如</p>
+<ul>
+<li>UControllChannel：连接控制消息</li>
+<li>UActorChannel：Actor创建/属性复制/RPC等</li>
+<li>UVoiceChannel：语言数据</li>
+</ul>
+<h2 id="数据发包流程">数据发包流程</h2>
+<p>数据发送流程可以从服务端和客户端两方视角里来看。客户端和服务器都会发包，但是它们发出的东西不完全一样，除了RPC外，服务端还承担了把自己权威Actor状态复制给各个客户端。</p>
+<p>![image 2](./images/image 2.png)</p>
+<p>这里可以分成两个阶段，一个是收集Bunch的阶段，此帧中游戏逻辑产生的FOutBunch，通过各自<code>UChannel::SendBunch</code>，最终写入名为<code>SendBuffer</code>的缓存中，在这里等候后续发包</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> UNetConnection</span><span style="color:#E1E4E8"> : </span><span style="color:#F97583">public</span><span style="color:#B392F0"> UPlayer</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">public:</span></span>
+<span class="line"><span style="color:#6A737D">	// Packet.</span></span>
+<span class="line"><span style="color:#E1E4E8">	FBitWriter		SendBuffer;</span><span style="color:#6A737D">						// Queued up bits waiting to send</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>另一个则是发送阶段，见<code>UNetDriver::TickFlush</code>。这是每帧出站的主要入口，最终通过<code>FlushNet</code> 发包</p>
+<h3 id="unetdrivertickflush"><code>UNetDriver::TickFlush</code></h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UNetDriver</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">TickFlush</span><span style="color:#E1E4E8">(float DeltaSeconds)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    ...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">IsServer</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> ClientConnections.</span><span style="color:#B392F0">Num</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">         ServerReplicateActors</span><span style="color:#E1E4E8">(DeltaSeconds);   </span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">    </span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (ServerConnection)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        ProcessLocalClientPackets</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        ServerConnection</span><span style="color:#F97583">-></span><span style="color:#B392F0">Tick</span><span style="color:#E1E4E8">(DeltaSeconds);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    else</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#B392F0">        ProcessLocalServerPackets</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (UNetConnection</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Connection : ClientConnections)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Connection</span><span style="color:#F97583">-></span><span style="color:#B392F0">Tick</span><span style="color:#E1E4E8">(DeltaSeconds);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这段代码把服务端和客户端的差异分得很清楚。</p>
+<ul>
+<li>服务端有 <code>ClientConnections</code>，会在传统复制路径中执行 <code>ServerReplicateActors</code>，产生 Actor 复制数据，然后逐个 <code>ClientConnection->Tick</code>，把连接上的待发送数据通过<code>FlushNet</code>发包。</li>
+<li>客户端通常有 <code>ServerConnection</code>，客户端不需要走复制Actor，因为它并非权威端。客户端本地业务产生的上行数据，通常已经在游戏逻辑阶段写到了 <code>ServerConnection.SendBuffer</code>，后续由 <code>ServerConnection->Tick</code> ，把连接上的待发送数据通过<code>FlushNet</code>发包</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UNetConnection</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">Tick</span><span style="color:#E1E4E8">(float DeltaSeconds)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    ...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (TimeSensitive </span><span style="color:#F97583">||</span></span>
+<span class="line"><span style="color:#E1E4E8">        (Driver</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetElapsedTime</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">-</span><span style="color:#E1E4E8"> LastSendTime) </span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Driver</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">KeepAliveTime)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">				bool bHandlerHandshakeComplete </span><span style="color:#F97583">=</span><span style="color:#F97583"> !</span><span style="color:#E1E4E8">Handler.</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">||</span><span style="color:#E1E4E8"> Handler</span><span style="color:#F97583">-></span><span style="color:#B392F0">IsFullyInitialized</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">		</span></span>
+<span class="line"><span style="color:#6A737D">				// Delay any packet sends on the server, until we've verified that a packet has been received from the client.</span></span>
+<span class="line"><span style="color:#F97583">				if</span><span style="color:#E1E4E8"> (bHandlerHandshakeComplete </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#B392F0"> HasReceivedClientPacket</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">				{</span></span>
+<span class="line"><span style="color:#B392F0">					FlushNet</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">				}</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<h3 id="rpc">RPC</h3>
+<p>RPC远程过程调用，它并不是直接调用远端函数，而是会先序列化成<code>FOutBunch</code> ，走<code>ActorChannel</code>的通道发送</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UNetDriver</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ProcessRemoteFunctionForChannelPrivate</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">...</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Ch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">OpenPacketId.First </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> INDEX_NONE</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#6A737D">		    // ...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">bIsServer)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#F97583">            return</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        Ch</span><span style="color:#F97583">-></span><span style="color:#B392F0">SetForcedSerializeFromRPC</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">        Ch</span><span style="color:#F97583">-></span><span style="color:#B392F0">ReplicateActor</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">        Ch</span><span style="color:#F97583">-></span><span style="color:#B392F0">SetForcedSerializeFromRPC</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">false</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    FOutBunch </span><span style="color:#B392F0">Bunch</span><span style="color:#E1E4E8">(Ch, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Function</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">FunctionFlags </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> FUNC_NetReliable)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch.bReliable </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    FNetBitWriter </span><span style="color:#B392F0">TempWriter</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">...</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">    RepLayout</span><span style="color:#F97583">-></span><span style="color:#B392F0">SendPropertiesForRPC</span><span style="color:#E1E4E8">(Function, Ch, TempWriter, Parms);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    ...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (QueueBunch)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Ch</span><span style="color:#F97583">-></span><span style="color:#B392F0">QueueRemoteFunctionBunch</span><span style="color:#E1E4E8">(TargetObj, Function, Bunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    else</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Ch</span><span style="color:#F97583">-></span><span style="color:#B392F0">SendBunch</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">Bunch, </span><span style="color:#79B8FF">true</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>这里简单体积两个细节。</p>
+<ol>
+<li>RPC参数通过<code>RepLayout->SendPropertiesForRPC</code> 序列化，写入函数标识和参数。</li>
+<li>如果<code>ActorChannel</code> 没初始化打开，客户端一侧直接return。因为客户端不能在服务器还没有建立连接的时候就发RPC，而如果是服务器发给客户端，服务器会先强制<code>ReplicateActor()</code> ,让客户端认识这个Actor，再调用其上的RPC。</li>
+</ol>
+<h3 id="actor复制">Actor复制</h3>
+<p>传统的复制路径入口（这里写传统的意思就是非IRis的复制系统）是<code>ServerReplicateActors</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#E1E4E8">int32 </span><span style="color:#B392F0">UNetDriver</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ServerReplicateActors</span><span style="color:#E1E4E8">(float DeltaSeconds)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (ClientConnections.</span><span style="color:#B392F0">Num</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (ReplicationDriver)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#E1E4E8"> ReplicationDriver</span><span style="color:#F97583">-></span><span style="color:#B392F0">ServerReplicateActors</span><span style="color:#E1E4E8">(DeltaSeconds);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    ReplicationFrame</span><span style="color:#F97583">++</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    const</span><span style="color:#79B8FF"> int32</span><span style="color:#E1E4E8"> NumClientsToTick </span><span style="color:#F97583">=</span></span>
+<span class="line"><span style="color:#B392F0">        ServerReplicateActors_PrepConnections</span><span style="color:#E1E4E8">(DeltaSeconds);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (NumClientsToTick </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    ServerReplicateActors_BuildConsiderList</span><span style="color:#E1E4E8">(CurrentConsiderList, ServerTickTime);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (UNetConnection</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Connection : ClientConnections)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (Connection</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ViewTarget)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#B392F0">            ServerReplicateActors_ForConnection</span><span style="color:#E1E4E8">(Params);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>我们知道服务器并不是把所有的Actor广播给所有客户端，它会先构建本帧值得考虑的 Actor 列表，再针对每条连接去判断相关性、优先级、level 可见性等等。</p>
+<p>看<code>UNetDriver::ServerReplicateActors_ProcessPrioritizedActorsRange</code> ，这里是真正进入某个Actor进行写出的位置。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#E1E4E8">int32 </span><span style="color:#B392F0">UNetDriver</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ServerReplicateActors_ProcessPrioritizedActorsRange</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">...</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">	if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">Connection</span><span style="color:#F97583">-></span><span style="color:#B392F0">IsNetReady</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#F97583">	    return</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">	for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">...</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">	{</span></span>
+<span class="line"><span style="color:#E1E4E8">	    UActorChannel</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Channel </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> PriorityActors[j]</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">Channel;</span></span>
+<span class="line"><span style="color:#E1E4E8">	    AActor</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Actor </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ActorInfo</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">Actor;</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#F97583">	    const</span><span style="color:#79B8FF"> bool</span><span style="color:#E1E4E8"> bLevelInitializedForActor </span><span style="color:#F97583">=</span></span>
+<span class="line"><span style="color:#B392F0">	        IsLevelInitializedForActor</span><span style="color:#E1E4E8">(Actor, Connection);</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#F97583">	    if</span><span style="color:#E1E4E8"> (bIsRecentlyRelevant)</span></span>
+<span class="line"><span style="color:#E1E4E8">	    {</span></span>
+<span class="line"><span style="color:#F97583">	        if</span><span style="color:#E1E4E8"> (Channel </span><span style="color:#F97583">==</span><span style="color:#E1E4E8"> nullptr </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> bLevelInitializedForActor)</span></span>
+<span class="line"><span style="color:#E1E4E8">	        {</span></span>
+<span class="line"><span style="color:#F97583">	            **</span><span style="color:#E1E4E8">Channel </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> (UActorChannel</span><span style="color:#F97583">*</span><span style="color:#E1E4E8">)Connection</span><span style="color:#F97583">-></span><span style="color:#B392F0">CreateChannelByName</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">	                NAME_Actor,EChannelCreateFlags::OpenedLocally);</span><span style="color:#F97583">**</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#F97583">	            if</span><span style="color:#E1E4E8"> (Channel)</span></span>
+<span class="line"><span style="color:#E1E4E8">	            {</span></span>
+<span class="line"><span style="color:#E1E4E8">	                Channel</span><span style="color:#F97583">-></span><span style="color:#B392F0">SetChannelActor</span><span style="color:#E1E4E8">(Actor, ESetChannelActorFlags::None);</span></span>
+<span class="line"><span style="color:#E1E4E8">	            }</span></span>
+<span class="line"><span style="color:#E1E4E8">	        }</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#F97583">	        if</span><span style="color:#E1E4E8"> (Channel </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> Channel</span><span style="color:#F97583">-></span><span style="color:#B392F0">IsNetReady</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">	        {</span></span>
+<span class="line"><span style="color:#E1E4E8">	            Channel</span><span style="color:#F97583">-></span><span style="color:#B392F0">ReplicateActor</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">	        }</span></span>
+<span class="line"><span style="color:#E1E4E8">	    }</span></span>
+<span class="line"><span style="color:#E1E4E8">	</span></span>
+<span class="line"><span style="color:#F97583">	    if</span><span style="color:#E1E4E8"> ((</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">bIsRecentlyRelevant </span><span style="color:#F97583">||</span><span style="color:#E1E4E8"> Actor</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetTearOff</span><span style="color:#E1E4E8">()) </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> Channel </span><span style="color:#F97583">!=</span><span style="color:#E1E4E8"> nullptr)</span></span>
+<span class="line"><span style="color:#E1E4E8">	    {</span></span>
+<span class="line"><span style="color:#E1E4E8">	        Channel</span><span style="color:#F97583">-></span><span style="color:#B392F0">Close</span><span style="color:#E1E4E8">(EChannelCloseReason::Relevancy);</span></span>
+<span class="line"><span style="color:#E1E4E8">	    }</span></span>
+<span class="line"><span style="color:#E1E4E8">	}</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>对于服务器来说，<code>ActorChannel</code> 一定是隶属于某个Connection的。而一个Connection会关联一个客户端。也就是说，同一个服务端 Actor，如果要复制给三个客户端，就可能分别在三个 <code>ClientConnection</code> 上有三个 <code>ActorChannel</code>。</p>
+<h3 id="uactorchannelreplicateactor"><strong><code>UActorChannel::ReplicateActor</code></strong></h3>
+<p>在这里，服务器的Actor复制会写入<code>FOutBunch</code></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#E1E4E8">int64 </span><span style="color:#B392F0">UActorChannel</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ReplicateActor</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    ...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    FOutBunch </span><span style="color:#B392F0">Bunch</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">this</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (RepFlags.bNetInitial </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> OpenedLocally)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Connection</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">PackageMap</span><span style="color:#F97583">-></span><span style="color:#B392F0">SerializeNewActor</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">            Bunch,</span></span>
+<span class="line"><span style="color:#79B8FF">            this</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#E1E4E8">            static_cast</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">AActor</span><span style="color:#F97583">*&#x26;></span><span style="color:#E1E4E8">(Actor));</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">bIsNewlyReplicationPaused)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        bWroteSomethingImportant </span><span style="color:#F97583">|=</span></span>
+<span class="line"><span style="color:#E1E4E8">            ActorReplicator</span><span style="color:#F97583">-></span><span style="color:#B392F0">ReplicateProperties</span><span style="color:#E1E4E8">(Bunch, RepFlags);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        bWroteSomethingImportant </span><span style="color:#F97583">|=</span></span>
+<span class="line"><span style="color:#B392F0">            DoSubObjectReplication</span><span style="color:#E1E4E8">(Bunch, RepFlags);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        bWroteSomethingImportant </span><span style="color:#F97583">|=</span></span>
+<span class="line"><span style="color:#B392F0">            UpdateDeletedSubObjects</span><span style="color:#E1E4E8">(Bunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (bWroteSomethingImportant)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        FPacketIdRange PacketRange </span><span style="color:#F97583">=</span><span style="color:#B392F0"> SendBunch</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">Bunch, </span><span style="color:#79B8FF">1</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">        ...</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>初始复制时，<code>SerializeNewActor</code> 会写入远端创建或绑定这个 Actor 所需的信息。后续属性变化由 <code>FObjectReplicator / FRepLayout</code> 写入。</p>
+<h3 id="uchannelsendbunch"><strong><code>UChannel::SendBunch</code></strong></h3>
+<p>我们上文一直说到<code>FOutBunch</code>，这是和收包侧的<code>FInBunch</code>对应的。可以理解为携带相关Channel连接信息的数据流。</p>
+<p>这些连接信息最主要包括</p>
+<ul>
+<li><code>ChIndex</code> / <code>ChName</code>：这段数据属于哪条 channel。</li>
+<li><code>bReliable</code>：是否需要可靠、有序、可重发。</li>
+<li><code>bOpen</code> / <code>bClose</code>：是否打开或关闭 channel。</li>
+<li><code>bPartial</code>：是否是一个大 bunch 拆出来的分片。</li>
+<li><code>bHasPackageMapExports</code> / <code>bHasMustBeMappedGUIDs</code>：是否携带对象引用导出相关信息。</li>
+</ul>
+<p>后续 <code>UNetConnection::SendRawBunch</code> 会把这些信息写成 bunch header。收包侧的 <code>DispatchPacket</code> 再根据这些 header 还原出 <code>FInBunch</code>，找到对应的 channel。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#E1E4E8">FPacketIdRange </span><span style="color:#B392F0">UChannel</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">SendBunch</span><span style="color:#E1E4E8">(FOutBunch</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> Bunch, bool Merge)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    ...</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (OpenedLocally </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#E1E4E8"> OpenPacketId.First </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> INDEX_NONE</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        Bunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">bOpen </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    TArray</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FOutBunch</span><span style="color:#F97583">*>&#x26;</span><span style="color:#E1E4E8"> OutgoingBunches </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Connection</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetOutgoingBunches</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    OutgoingBunches.</span><span style="color:#B392F0">Reset</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">   </span></span>
+<span class="line"><span style="color:#6A737D">    // ... 总之在这里构建Bunch所需的写入内容</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Bunch</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">></span><span style="color:#79B8FF"> MAX_SINGLE_BUNCH_SIZE_BITS</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#6A737D">        // split into partial bunches</span></span>
+<span class="line"><span style="color:#F97583">        ...</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    else</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        OutgoingBunches.</span><span style="color:#B392F0">Add</span><span style="color:#E1E4E8">(Bunch);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (FOutBunch</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> NextBunch : OutgoingBunches)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        NextBunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">bReliable </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">bReliable;</span></span>
+<span class="line"><span style="color:#E1E4E8">        NextBunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">bOpen </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">bOpen;</span></span>
+<span class="line"><span style="color:#E1E4E8">        NextBunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">bClose </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">bClose;</span></span>
+<span class="line"><span style="color:#E1E4E8">        NextBunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ChIndex </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ChIndex;</span></span>
+<span class="line"><span style="color:#E1E4E8">        NextBunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ChName </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Bunch</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">ChName;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        FOutBunch</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> ThisOutBunch </span><span style="color:#F97583">=</span><span style="color:#B392F0"> PrepBunch</span><span style="color:#E1E4E8">(NextBunch, OutBunch, Merge);</span></span>
+<span class="line"><span style="color:#E1E4E8">        int32 PacketId </span><span style="color:#F97583">=</span><span style="color:#B392F0"> SendRawBunch</span><span style="color:#E1E4E8">(ThisOutBunch, Merge, </span><span style="color:#F97583">...</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">        ...</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p><code>Reliable RPC</code> 通常会让 <code>Bunch.bReliable = true</code>，于是进入 channel 的可靠队列，等待 ack/nak 后移除或重发。</p>
+<p>普通属性复制更偏状态同步，如果丢了一次更新，后续复制仍然会基于其他机制进行追赶，让客户端追赶到服务端认为需要同步的状态，它关心的是客户端最终拿到足够新的状态，而不是每个中间变化都逐条可靠送达。某些 Actor 复制数据在初始打开等场景下可能被打进 reliable bunch，但这只能说明特定 bunch 走了可靠传输，不代表“属性复制整体就是 reliable”。</p>
+<p>简单来说：Reliable RPC 保证的是“调用这条消息到达”，属性复制追求的是“状态最终同步到位”。</p>
+<h3 id="关于sendbuffer">关于<code>SendBuffer</code></h3>
+<p>可以理解为<code>SendBuffer</code> 是 <code>UNetConnection</code> 上的出站 packet 组装缓冲区。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#6A737D">// NetConnection.h</span></span>
+<span class="line"><span style="color:#E1E4E8">FBitWriter SendBuffer; </span><span style="color:#6A737D">// Queued up bits waiting to send</span></span></code></pre>
+<p>只有等到<code>FlushNet</code>时，<code>SendBuffer</code>里面的内容才会被当成一个packet交给<code>LowLevelSend</code>。</p>
+<h3 id="unetconnectionflushnet"><strong><code>UNetConnection::FlushNet</code></strong></h3>
+<p>在这里是连接层提交Packet的位置，这里面对的数据已经是组装好的Packet内容了。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UNetConnection</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">FlushNet</span><span style="color:#E1E4E8">(bool bIgnoreSimulation)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#B392F0">    ValidateSendBuffer</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    LastEnd </span><span style="color:#F97583">=</span><span style="color:#B392F0"> FBitWriterMark</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    TimeSensitive </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (SendBuffer.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">||</span></span>
+<span class="line"><span style="color:#E1E4E8">        HasDirtyAcks </span><span style="color:#F97583">||</span></span>
+<span class="line"><span style="color:#E1E4E8">        Driver</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetElapsedTime</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">-</span><span style="color:#E1E4E8"> LastSendTime </span><span style="color:#F97583">></span><span style="color:#E1E4E8"> Driver</span><span style="color:#F97583">-></span><span style="color:#E1E4E8">KeepAliveTime)</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#E1E4E8">        FOutPacketTraits Traits;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (SendBuffer.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">==</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#B392F0">            WriteBitsToSendBuffer</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">NULL</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">            Traits.bIsKeepAlive </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> true</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (Handler.</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#E1E4E8">            Handler</span><span style="color:#F97583">-></span><span style="color:#B392F0">OutgoingHigh</span><span style="color:#E1E4E8">(SendBuffer);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        SendBuffer.</span><span style="color:#B392F0">WriteBit</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">1</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#B392F0">IsInternalAck</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#B392F0">            WritePacketHeader</span><span style="color:#E1E4E8">(SendBuffer);</span></span>
+<span class="line"><span style="color:#B392F0">            WriteFinalPacketInfo</span><span style="color:#E1E4E8">(SendBuffer, PacketSentTimeInS);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">        if</span><span style="color:#E1E4E8"> (Driver</span><span style="color:#F97583">-></span><span style="color:#B392F0">IsNetResourceValid</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">        {</span></span>
+<span class="line"><span style="color:#B392F0">            LowLevelSend</span><span style="color:#E1E4E8">(SendBuffer.</span><span style="color:#B392F0">GetData</span><span style="color:#E1E4E8">(), SendBuffer.</span><span style="color:#B392F0">GetNumBits</span><span style="color:#E1E4E8">(), Traits);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        PacketNotify.</span><span style="color:#B392F0">CommitAndIncrementOutSeq</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#F97583">        ++</span><span style="color:#E1E4E8">OutPacketId;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        LastSendTime </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> Driver</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetElapsedTime</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#B392F0">        InitSendBuffer</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<ul>
+<li><code>FlushNet</code> 不要求一定有业务 bunch。只要存在 dirty ack，或者 keepalive 到时间，也可能发出 packet。</li>
+<li><code>FlushNet</code> 最后调用的是虚函数 <code>LowLevelSend</code>。传统 UDP 路径下会进入 <code>UIpConnection</code> ，到这里已经编码成字节流，<code>FScoket::SendTo</code>不会关心是Actor复制还是RPC，只负责把数据发给远端地址了</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="jsx"><code><span class="line"></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UIpConnection</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">LowLevelSend</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">void*</span><span style="color:#E1E4E8"> Data, int32 CountBits, FOutPacketTraits</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> Traits)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#E1E4E8">    uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> DataToSend </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> static_cast</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">uint8</span><span style="color:#F97583">*></span><span style="color:#E1E4E8">(Data);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">!</span><span style="color:#E1E4E8">RemoteAddr.</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">||</span><span style="color:#F97583"> !</span><span style="color:#E1E4E8">RemoteAddr</span><span style="color:#F97583">-></span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    SendToRemote</span><span style="color:#E1E4E8">(DataToSend, CountBits, Traits);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> UIpConnection</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">SendToRemote</span><span style="color:#E1E4E8">(uint8</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> DataToSend, int32 CountBits, FOutPacketTraits</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> Traits)</span></span>
+<span class="line"><span style="color:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (Handler.</span><span style="color:#B392F0">IsValid</span><span style="color:#E1E4E8">() </span><span style="color:#F97583">&#x26;&#x26;</span><span style="color:#F97583"> !</span><span style="color:#E1E4E8">Handler</span><span style="color:#F97583">-></span><span style="color:#B392F0">GetRawSend</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">    {</span></span>
+<span class="line"><span style="color:#F97583">        const</span><span style="color:#79B8FF"> ProcessedPacket</span><span style="color:#E1E4E8"> ProcessedData </span><span style="color:#F97583">=</span></span>
+<span class="line"><span style="color:#E1E4E8">            Handler</span><span style="color:#F97583">-></span><span style="color:#B392F0">Outgoing</span><span style="color:#E1E4E8">(DataToSend, CountBits, Traits);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">        DataToSend </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ProcessedData.Data;</span></span>
+<span class="line"><span style="color:#E1E4E8">        CountBits </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> ProcessedData.CountBits;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    int32 CountBytes </span><span style="color:#F97583">=</span><span style="color:#B392F0"> FMath</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">DivideAndRoundUp</span><span style="color:#E1E4E8">(CountBits, </span><span style="color:#79B8FF">8</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">    FSocket</span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> CurSocket </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetSocket</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    CurSocket</span><span style="color:#F97583">-></span><span style="color:#B392F0">SendTo</span><span style="color:#E1E4E8">(</span></span>
+<span class="line"><span style="color:#E1E4E8">        DataToSend,</span></span>
+<span class="line"><span style="color:#E1E4E8">        CountBytes,</span></span>
+<span class="line"><span style="color:#E1E4E8">        BytesSent,</span></span>
+<span class="line"><span style="color:#F97583">        *</span><span style="color:#E1E4E8">RemoteAddr);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span></code></pre>
+<h2 id="其他">其他</h2>
+<ul>
+<li>
+<p>问题一：<code>TickDispatch</code>会通过<code>FPacketIterator</code>每帧取多少个入站packet</p>
+<p>并不是每帧固定取多少个包，如果发送的包很少会尽快处理。如果包很多，会根据容量和预算决定。整体上遵循在本帧尽力把可处理的packet推进到下个流程</p>
+</li>
+<li>
+<p>问题二：网络包到达机器是异步的，包先来了还没消费怎么办</p>
+<p>会有SocketBuffer。如果由开启receive thread，它负责读取后塞给游戏线程的包队列，等待消费。如果没有，游戏线程直接从socket取包。</p>
+</li>
+<li>
+<p>怎么表达网络同步中一个跨端对象，怎么认出来是哪个Actor的</p>
+<p>不是内存地址，UE用NetGUID来标识，它是网络层发给某个Actor的唯一编号。</p>
+</li>
+<li>
+<p>同一个Packet中，客户端先处理属性，还是RPC</p>
+<p>通常按Bunch在Packet里的顺序处理。因此不要用“同包内属性一定先于 RPC”或“RPC 一定先于属性”作为逻辑前提。</p>
+</li>
+</ul>
+<p>尽管借助了AI梳理，不过本文依然保持了古法写作。在AI时代，阅读源码变成一件极其没有门槛的事情，AI近乎量子速读的能力，能快速厘清源码内容，抓住主要脉络，真的非常方便了。大部分草稿散落在自己的笔记中，有点犹豫有没有写的必要，不过工作间隙梳理成文，把内容内化到脑子里，依然要花费必须的时间，也算帮助消化吸收了。</p> <footer class="article-end"> <nav class="article-pagination" aria-label="相邻文章"> <a href="../../posts/2026-05/UE网络笔记二：DS和客户端连接.html"> <span>← NEWER</span> <strong>UE网络笔记二：DS和客户端连接</strong> </a> <a class="article-pagination-next" href="../../posts/2026-02/第三人称无缝传送门.html"> <span>OLDER →</span> <strong>第三人称无缝传送门</strong> </a> </nav> <section class="related-notes" aria-labelledby="related-notes-title"> <h2 id="related-notes-title">继续阅读</h2> <div> <a href="../../posts/2026-08/联机游戏开发指南笔记（二）.html">联机游戏开发指南笔记（二）</a><a href="../../posts/2026-07/联机游戏开发指南笔记（一）.html">联机游戏开发指南笔记（一）</a><a href="../../posts/2026-06/UE网络笔记三：属性同步机制.html">UE网络笔记三：属性同步机制</a> </div> </section> </footer> </article> <aside class="article-toc" aria-label="文章目录"> <h2 class="article-toc-title">CONTENTS</h2> <nav> <a class="article-toc-link depth-2" href="#前置知识"> 前置知识 </a><a class="article-toc-link depth-2" href="#概念说明"> 概念说明 </a><a class="article-toc-link depth-3" href="#netdriver"> NetDriver </a><a class="article-toc-link depth-3" href="#netconnection"> NetConnection </a><a class="article-toc-link depth-3" href="#channel"> Channel </a><a class="article-toc-link depth-3" href="#localplayerserverconnection"> LocalPlayer/ServerConnection </a><a class="article-toc-link depth-2" href="#数据收包流程"> 数据收包流程 </a><a class="article-toc-link depth-3" href="#uipnetdrivertickdispatch"> UIpNetDriver::TickDispatch </a><a class="article-toc-link depth-3" href="#unetconnectionreceivedrawpacket"> UNetConnection::ReceivedRawPacket </a><a class="article-toc-link depth-3" href="#receivedpacketreceivedpacket"> ReceivedPacket::ReceivedPacket </a><a class="article-toc-link depth-3" href="#receivedpacketdispatchpacket"> ReceivedPacket::DispatchPacket </a><a class="article-toc-link depth-3" href="#uchannalreceivedrawbunch"> UChannal::ReceivedRawBunch </a><a class="article-toc-link depth-3" href="#uchannelreceivednextbunch"> UChannel::ReceivedNextBunch </a><a class="article-toc-link depth-3" href="#uchannelreceivedsequencedbunch"> UChannel::ReceivedSequencedBunch </a><a class="article-toc-link depth-2" href="#数据发包流程"> 数据发包流程 </a><a class="article-toc-link depth-3" href="#unetdrivertickflush"> UNetDriver::TickFlush </a><a class="article-toc-link depth-3" href="#rpc"> RPC </a><a class="article-toc-link depth-3" href="#actor复制"> Actor复制 </a><a class="article-toc-link depth-3" href="#uactorchannelreplicateactor"> UActorChannel::ReplicateActor </a><a class="article-toc-link depth-3" href="#uchannelsendbunch"> UChannel::SendBunch </a><a class="article-toc-link depth-3" href="#关于sendbuffer"> 关于SendBuffer </a><a class="article-toc-link depth-3" href="#unetconnectionflushnet"> UNetConnection::FlushNet </a><a class="article-toc-link depth-2" href="#其他"> 其他 </a> </nav> </aside> </div> </main>  <footer class="site-footer"> <div class="footer-inner site-shell"> <div class="footer-identity"> <strong>Elysium</strong> </div> <nav class="footer-links" aria-label="页脚导航"> <a href="https://github.com/Pudding-Evan" rel="noopener">GITHUB</a> </nav> <span class="footer-copyright">© 2026 Evan</span> </div> </footer> </body></html>
